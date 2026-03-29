@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random as _random_mod
 
+from ml_service.data.skill_graph import build_skill_cooccurrence
 from ml_service.data.skill_taxonomy import cluster_coverage
 from ml_service.graph.schema import CVData, DatasetSplit, JobData, LabeledPair
 
@@ -25,45 +26,62 @@ class PairLabeler:
         cv_text_skills: dict[int, set[str]] | None = None,
         job_clusters: dict[int, list[str]] | None = None,
         noise_rate: float = 0.0,
+        use_skill_relations: bool = False,
     ) -> list[LabeledPair]:
         """Classify all CV-Job pairs, then sample with 1:1:2 ratio.
 
-        Target: num_positive positives, num_positive easy negatives,
-        2 * num_positive hard negatives  →  total = 4 * num_positive.
+        When use_skill_relations=True, pairs with low direct skill overlap
+        but high related-skill overlap are labeled positive. This creates
+        positives that skill-overlap baseline CANNOT detect, but GNN can
+        via Skill→Skill edges.
 
-        When cv_text_skills is provided, "effective skills" includes text-only
-        skills for labeling (but these are invisible to skill-overlap baseline).
-
-        When job_clusters is provided, cluster coverage is an additional
-        pathway to positive labeling.
+        Example: CV has "Flask, Celery", JD requires "Django"
+        → direct overlap = 0, but Flask relates_to Django → positive
         """
         cv_text_skills = cv_text_skills or {}
         job_clusters = job_clusters or {}
+
+        # Build related-skill lookup if enabled
+        related_skills: dict[str, set[str]] = {}
+        if use_skill_relations:
+            cooccurrence = build_skill_cooccurrence(cvs, jobs)
+            for (a, b), pmi in cooccurrence.items():
+                related_skills.setdefault(a, set()).add(b)
+                related_skills.setdefault(b, set()).add(a)
 
         positives: list[tuple[int, int]] = []
         easy_negs: list[tuple[int, int]] = []
         hard_negs: list[tuple[int, int]] = []
 
         for cv in cvs:
-            # Effective skills = structured + text-only
             effective_skills = set(cv.skills) | cv_text_skills.get(cv.cv_id, set())
 
+            # Expanded skills = effective + related skills (for labeling only)
+            if related_skills:
+                expanded_skills = set(effective_skills)
+                for sk in list(effective_skills):
+                    expanded_skills.update(related_skills.get(sk, set()))
+            else:
+                expanded_skills = effective_skills
+
             for job in jobs:
-                overlap = self._skill_overlap_effective(effective_skills, job)
+                direct_overlap = self._skill_overlap_effective(effective_skills, job)
+                expanded_overlap = self._skill_overlap_effective(expanded_skills, job)
                 dist = self._seniority_distance(cv, job)
                 clusters = job_clusters.get(job.job_id, [])
                 clust_cov = cluster_coverage(effective_skills, clusters) if clusters else 0.0
 
                 is_positive = (
-                    (overlap >= 0.5 and dist <= 1)
+                    (direct_overlap >= 0.5 and dist <= 1)
                     or (clust_cov >= 0.6 and dist <= 1)
+                    or (expanded_overlap >= 0.6 and dist <= 1 and direct_overlap < 0.5)
                 )
 
                 if is_positive:
                     positives.append((cv.cv_id, job.job_id))
-                elif overlap < 0.2 or dist >= 3:
+                elif direct_overlap < 0.15 or dist >= 3:
                     easy_negs.append((cv.cv_id, job.job_id))
-                elif 0.2 <= overlap < 0.5 and dist <= 1:
+                elif 0.15 <= direct_overlap < 0.5 and dist <= 1:
                     hard_negs.append((cv.cv_id, job.job_id))
                 # else: ambiguous — skip
 

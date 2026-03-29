@@ -18,7 +18,7 @@ from ml_service.graph.schema import (
     JobData,
     LabeledPair,
 )
-from ml_service.models.gnn import HeteroGraphSAGE, prepare_data_for_gnn
+from ml_service.models.gnn import HeteroGraphSAGE, HeteroRGCN, prepare_data_for_gnn
 from ml_service.models.losses import bpr_loss
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TrainConfig:
+    model_type: str = "graphsage"  # "graphsage" or "rgcn"
     hidden_channels: int = 128
     num_layers: int = 2
     lr: float = 1e-3
@@ -130,11 +131,18 @@ class Trainer:
 
         # Build model
         metadata = data_clean.metadata()
-        model = HeteroGraphSAGE(
-            metadata=metadata,
-            hidden_channels=cfg.hidden_channels,
-            num_layers=cfg.num_layers,
-        )
+        if cfg.model_type == "rgcn":
+            model = HeteroRGCN(
+                metadata=metadata,
+                hidden_channels=cfg.hidden_channels,
+                num_layers=cfg.num_layers,
+            )
+        else:
+            model = HeteroGraphSAGE(
+                metadata=metadata,
+                hidden_channels=cfg.hidden_channels,
+                num_layers=cfg.num_layers,
+            )
         optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
 
         result = TrainResult()

@@ -2,10 +2,12 @@
 
 Uses SkillNormalizer to find canonical skills in job description text.
 Infers seniority from title/description heuristics.
+Computes TF-IDF skill importance when a corpus is provided.
 """
 
 from __future__ import annotations
 
+import math
 import re
 
 from ml_service.crawler.base import RawJob
@@ -29,10 +31,42 @@ _SALARY_NORM_ANNUAL_TO_MONTHLY = 12
 
 
 class SkillExtractor:
-    """Converts RawJob instances to JobData for the graph pipeline."""
+    """Converts RawJob instances to JobData for the graph pipeline.
+
+    When ``fit()`` is called with a corpus of job descriptions, skill importance
+    is computed via TF-IDF: rare skills get higher importance (1-5 scale).
+    Without ``fit()``, all skills default to importance=3.
+    """
 
     def __init__(self, normalizer: SkillNormalizer) -> None:
         self._norm = normalizer
+        self._idf: dict[str, float] = {}
+        self._fitted = False
+
+    def fit(self, raws: list[RawJob]) -> SkillExtractor:
+        """Compute IDF from a corpus of job descriptions.
+
+        After fitting, ``extract()`` uses TF-IDF to assign skill importance.
+        """
+        n = len(raws)
+        if n == 0:
+            self._fitted = True
+            return self
+
+        # doc_freq: how many JDs mention each skill
+        doc_freq: dict[str, int] = {}
+        for raw in raws:
+            skills_in_doc = set(self._extract_skills(raw.description))
+            for skill in skills_in_doc:
+                doc_freq[skill] = doc_freq.get(skill, 0) + 1
+
+        # IDF: log(N / df) — common skills get low IDF, rare skills high
+        self._idf = {}
+        for skill, df in doc_freq.items():
+            self._idf[skill] = math.log(n / df)
+
+        self._fitted = True
+        return self
 
     def extract(self, raw: RawJob, job_id: int) -> JobData:
         """Extract structured fields from a single RawJob."""
@@ -41,8 +75,7 @@ class SkillExtractor:
         sal_min, sal_max = self._normalize_salary(
             raw.salary_min, raw.salary_max, raw.salary_currency
         )
-        # Default importance = 3 for all extracted skills (no signal from raw data)
-        importances = tuple(3 for _ in skills)
+        importances = self._compute_importances(skills)
 
         return JobData(
             job_id=job_id,
@@ -57,6 +90,30 @@ class SkillExtractor:
     def extract_batch(self, raws: list[RawJob], start_id: int = 0) -> list[JobData]:
         """Extract a batch of RawJobs, assigning sequential IDs."""
         return [self.extract(raw, start_id + i) for i, raw in enumerate(raws)]
+
+    def _compute_importances(self, skills: list[str]) -> tuple[int, ...]:
+        """Compute skill importance (1-5) using TF-IDF if fitted, else default 3."""
+        if not self._fitted or not self._idf:
+            return tuple(3 for _ in skills)
+
+        if not skills:
+            return ()
+
+        # Raw IDF scores
+        raw_scores = [self._idf.get(s, 0.0) for s in skills]
+        min_s = min(raw_scores) if raw_scores else 0.0
+        max_s = max(raw_scores) if raw_scores else 0.0
+
+        # Normalize to 1-5
+        if max_s - min_s < 1e-8:
+            return tuple(3 for _ in skills)
+
+        importances = []
+        for score in raw_scores:
+            normalized = (score - min_s) / (max_s - min_s)  # 0-1
+            level = int(normalized * 4) + 1  # 1-5
+            importances.append(min(level, 5))
+        return tuple(importances)
 
     # ------------------------------------------------------------------
     # Skill extraction

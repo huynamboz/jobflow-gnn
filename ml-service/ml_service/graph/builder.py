@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from torch_geometric.data import HeteroData
 
+from ml_service.data.skill_graph import build_job_similarity_edges, build_skill_edges
 from ml_service.embedding.base import EmbeddingProvider
 from ml_service.graph.schema import (
     CVData,
@@ -110,6 +111,26 @@ class GraphBuilder:
         data["job", "requires_seniority", "seniority"].edge_index = torch.tensor(
             [rsen_src, rsen_dst], dtype=torch.long
         )
+
+        # --- skill → skill (relates_to) edges: co-occurrence PMI ---
+        sk_edge_index, sk_edge_attr = build_skill_edges(cvs, jobs, skill_to_idx)
+        if sk_edge_index[0]:
+            data["skill", "relates_to", "skill"].edge_index = torch.tensor(
+                sk_edge_index, dtype=torch.long
+            )
+            data["skill", "relates_to", "skill"].edge_attr = torch.tensor(
+                sk_edge_attr, dtype=torch.float
+            )
+
+        # --- job → job (similar_to) edges: skill overlap ---
+        job_edge_index, job_edge_attr = build_job_similarity_edges(jobs)
+        if job_edge_index[0]:
+            data["job", "similar_to", "job"].edge_index = torch.tensor(
+                job_edge_index, dtype=torch.long
+            )
+            data["job", "similar_to", "job"].edge_attr = torch.tensor(
+                job_edge_attr, dtype=torch.float
+            )
 
         # --- match / no_match label edges: CV -> Job ---
         match_src, match_dst = [], []

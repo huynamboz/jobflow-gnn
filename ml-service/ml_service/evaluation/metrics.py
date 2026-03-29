@@ -60,6 +60,29 @@ def auc_roc(y_true: np.ndarray, y_scores: np.ndarray) -> float:
     return float(roc_auc_score(y_true, y_scores))
 
 
+def precision_at_k(y_true: np.ndarray, y_scores: np.ndarray, k: int) -> float:
+    """Precision@K: fraction of top-k items that are positive."""
+    y_true = np.asarray(y_true)
+    y_scores = np.asarray(y_scores)
+    k = min(k, len(y_true))
+    if k == 0:
+        return 0.0
+    top_k_indices = np.argsort(y_scores)[::-1][:k]
+    hits = int(y_true[top_k_indices].sum())
+    return hits / k
+
+
+def hit_rate_at_k(y_true: np.ndarray, y_scores: np.ndarray, k: int) -> float:
+    """Hit Rate@K: 1.0 if at least one positive in top-k, else 0.0."""
+    y_true = np.asarray(y_true)
+    y_scores = np.asarray(y_scores)
+    k = min(k, len(y_true))
+    if k == 0:
+        return 0.0
+    top_k_indices = np.argsort(y_scores)[::-1][:k]
+    return 1.0 if y_true[top_k_indices].sum() > 0 else 0.0
+
+
 def compute_all_metrics(
     y_true: np.ndarray,
     y_scores: np.ndarray,
@@ -69,7 +92,9 @@ def compute_all_metrics(
     results: dict[str, float] = {}
     for k in ks:
         results[f"recall@{k}"] = recall_at_k(y_true, y_scores, k)
+        results[f"precision@{k}"] = precision_at_k(y_true, y_scores, k)
         results[f"ndcg@{k}"] = ndcg_at_k(y_true, y_scores, k)
+        results[f"hit_rate@{k}"] = hit_rate_at_k(y_true, y_scores, k)
     results["mrr"] = mrr(y_true, y_scores)
     results["auc_roc"] = auc_roc(y_true, y_scores)
     return results

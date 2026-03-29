@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 from torch_geometric.data import HeteroData
-from torch_geometric.nn import GraphSAGE, to_hetero
+from torch_geometric.nn import GraphSAGE, RGCNConv, to_hetero
 from torch_geometric.transforms import ToUndirected
 
 
@@ -22,24 +22,22 @@ class MLPDecoder(nn.Module):
 
 
 def prepare_data_for_gnn(data: HeteroData) -> HeteroData:
-    """Add reverse edges so every node type is a message destination.
-
-    This must be called once before building the model (to get metadata)
-    and before every forward pass.
-    """
+    """Add reverse edges so every node type is a message destination."""
     return ToUndirected()(data)
 
 
+# ---------------------------------------------------------------------------
+# GraphSAGE backbone (original)
+# ---------------------------------------------------------------------------
+
+
 class HeteroGraphSAGE(nn.Module):
-    """Heterogeneous GNN for CV-Job matching.
+    """Heterogeneous GNN using GraphSAGE backbone.
 
     Architecture:
     1. Per-type linear projections to common ``hidden_channels``
     2. PyG ``GraphSAGE`` wrapped with ``to_hetero()`` for message passing
     3. ``MLPDecoder`` to produce (cv, job) match scores
-
-    Note: input data **must** be preprocessed with ``prepare_data_for_gnn()``
-    (adds reverse edges) before calling ``encode()`` or ``forward()``.
     """
 
     def __init__(
@@ -53,12 +51,10 @@ class HeteroGraphSAGE(nn.Module):
         if node_dims is None:
             node_dims = {"cv": 386, "job": 386, "skill": 385, "seniority": 6}
 
-        # Per-type projection to common hidden_dim
         self.projections = nn.ModuleDict(
             {ntype: nn.Linear(dim, hidden_channels) for ntype, dim in node_dims.items()}
         )
 
-        # PyG built-in GraphSAGE wrapped for heterogeneous graph
         backbone = GraphSAGE(
             in_channels=hidden_channels,
             hidden_channels=hidden_channels,
@@ -66,35 +62,131 @@ class HeteroGraphSAGE(nn.Module):
             out_channels=hidden_channels,
         )
         self.gnn = to_hetero(backbone, metadata, aggr="mean")
-
         self.decoder = MLPDecoder(hidden_channels)
 
     def encode(self, data: HeteroData) -> dict[str, torch.Tensor]:
-        """Compute node embeddings for all node types."""
-        x_dict = {}
-        for ntype, proj in self.projections.items():
-            x_dict[ntype] = proj(data[ntype].x)
+        x_dict = {ntype: proj(data[ntype].x) for ntype, proj in self.projections.items()}
+        return self.gnn(x_dict, data.edge_index_dict)
 
-        z_dict = self.gnn(x_dict, data.edge_index_dict)
+    def decode(self, z_dict: dict[str, torch.Tensor], cv_indices: torch.Tensor, job_indices: torch.Tensor) -> torch.Tensor:
+        return self.decoder(z_dict["cv"][cv_indices], z_dict["job"][job_indices])
+
+    def forward(self, data: HeteroData, cv_indices: torch.Tensor, job_indices: torch.Tensor) -> torch.Tensor:
+        return self.decode(self.encode(data), cv_indices, job_indices)
+
+
+# ---------------------------------------------------------------------------
+# RGCN backbone (relation-aware, distinguishes edge types)
+# ---------------------------------------------------------------------------
+
+
+class HeteroRGCN(nn.Module):
+    """Heterogeneous GNN using RGCN backbone.
+
+    Unlike GraphSAGE, RGCN uses **relation-specific weight matrices** for each
+    edge type, better distinguishing has_skill vs requires_skill vs seniority edges.
+
+    Architecture:
+    1. Per-type linear projections
+    2. Stacked RGCNConv layers (one per edge type, with basis decomposition)
+    3. MLPDecoder for scoring
+    """
+
+    def __init__(
+        self,
+        metadata: tuple[list[str], list[tuple[str, str, str]]],
+        hidden_channels: int = 128,
+        num_layers: int = 2,
+        node_dims: dict[str, int] | None = None,
+        num_bases: int | None = None,
+    ) -> None:
+        super().__init__()
+        if node_dims is None:
+            node_dims = {"cv": 386, "job": 386, "skill": 385, "seniority": 6}
+
+        self._node_types = metadata[0]
+        self._edge_types = metadata[1]
+        num_relations = len(self._edge_types)
+
+        # Per-type projection
+        self.projections = nn.ModuleDict(
+            {ntype: nn.Linear(dim, hidden_channels) for ntype, dim in node_dims.items()}
+        )
+
+        # Stacked RGCN layers
+        self.convs = nn.ModuleList()
+        for _ in range(num_layers):
+            self.convs.append(
+                RGCNConv(
+                    in_channels=hidden_channels,
+                    out_channels=hidden_channels,
+                    num_relations=num_relations,
+                    num_bases=num_bases,
+                )
+            )
+
+        self.decoder = MLPDecoder(hidden_channels)
+
+        # Build edge_type → relation_id mapping
+        self._rel_map: dict[tuple[str, str, str], int] = {
+            et: i for i, et in enumerate(self._edge_types)
+        }
+
+    def encode(self, data: HeteroData) -> dict[str, torch.Tensor]:
+        # Project all nodes to common dim, stack into one tensor
+        node_offsets: dict[str, int] = {}
+        node_slices: dict[str, tuple[int, int]] = {}
+        x_parts = []
+        offset = 0
+        for ntype in self._node_types:
+            proj = self.projections[ntype]
+            x_n = proj(data[ntype].x)
+            n = x_n.size(0)
+            node_offsets[ntype] = offset
+            node_slices[ntype] = (offset, offset + n)
+            x_parts.append(x_n)
+            offset += n
+
+        x = torch.cat(x_parts, dim=0)  # [total_nodes, hidden]
+
+        # Build unified edge_index + edge_type tensor
+        edge_indices = []
+        edge_types = []
+        for et in self._edge_types:
+            if et not in data.edge_types:
+                continue
+            ei = data[et].edge_index.clone()
+            src_type, _, dst_type = et
+            ei[0] += node_offsets[src_type]
+            ei[1] += node_offsets[dst_type]
+            edge_indices.append(ei)
+            edge_types.append(torch.full((ei.size(1),), self._rel_map[et], dtype=torch.long))
+
+        if not edge_indices:
+            # No edges — return projected features
+            z_dict = {}
+            for ntype in self._node_types:
+                s, e = node_slices[ntype]
+                z_dict[ntype] = x[s:e]
+            return z_dict
+
+        edge_index = torch.cat(edge_indices, dim=1)
+        edge_type = torch.cat(edge_types)
+
+        # Message passing
+        for conv in self.convs:
+            x = torch.relu(conv(x, edge_index, edge_type))
+
+        # Split back to per-type
+        z_dict = {}
+        for ntype in self._node_types:
+            s, e = node_slices[ntype]
+            z_dict[ntype] = x[s:e]
+
         return z_dict
 
-    def decode(
-        self,
-        z_dict: dict[str, torch.Tensor],
-        cv_indices: torch.Tensor,
-        job_indices: torch.Tensor,
-    ) -> torch.Tensor:
-        """Decode (cv, job) pairs into scores."""
-        z_cv = z_dict["cv"][cv_indices]
-        z_job = z_dict["job"][job_indices]
-        return self.decoder(z_cv, z_job)
+    def decode(self, z_dict: dict[str, torch.Tensor], cv_indices: torch.Tensor, job_indices: torch.Tensor) -> torch.Tensor:
+        return self.decoder(z_dict["cv"][cv_indices], z_dict["job"][job_indices])
 
-    def forward(
-        self,
-        data: HeteroData,
-        cv_indices: torch.Tensor,
-        job_indices: torch.Tensor,
-    ) -> torch.Tensor:
-        """Full forward: encode + decode."""
-        z_dict = self.encode(data)
-        return self.decode(z_dict, cv_indices, job_indices)
+    def forward(self, data: HeteroData, cv_indices: torch.Tensor, job_indices: torch.Tensor) -> torch.Tensor:
+        return self.decode(self.encode(data), cv_indices, job_indices)

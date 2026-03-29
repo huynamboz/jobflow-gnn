@@ -6,8 +6,10 @@ import pytest
 from ml_service.evaluation.metrics import (
     auc_roc,
     compute_all_metrics,
+    hit_rate_at_k,
     mrr,
     ndcg_at_k,
+    precision_at_k,
     recall_at_k,
 )
 
@@ -130,6 +132,40 @@ class TestAUCROC:
 # ---------------------------------------------------------------------------
 
 
+class TestPrecisionAtK:
+    def test_perfect(self):
+        y_true = np.array([1, 1, 0, 0])
+        y_scores = np.array([0.9, 0.8, 0.2, 0.1])
+        assert precision_at_k(y_true, y_scores, k=2) == 1.0
+
+    def test_half(self):
+        y_true = np.array([1, 0, 1, 0])
+        y_scores = np.array([0.9, 0.8, 0.2, 0.1])
+        assert precision_at_k(y_true, y_scores, k=2) == 0.5
+
+    def test_zero(self):
+        y_true = np.array([0, 0, 1, 1])
+        y_scores = np.array([0.9, 0.8, 0.2, 0.1])
+        assert precision_at_k(y_true, y_scores, k=2) == 0.0
+
+
+class TestHitRateAtK:
+    def test_hit(self):
+        y_true = np.array([0, 1, 0, 0])
+        y_scores = np.array([0.1, 0.9, 0.2, 0.3])
+        assert hit_rate_at_k(y_true, y_scores, k=2) == 1.0
+
+    def test_miss(self):
+        y_true = np.array([0, 0, 1, 0])
+        y_scores = np.array([0.9, 0.8, 0.1, 0.05])
+        assert hit_rate_at_k(y_true, y_scores, k=2) == 0.0
+
+    def test_no_positives(self):
+        y_true = np.array([0, 0, 0])
+        y_scores = np.array([0.9, 0.5, 0.1])
+        assert hit_rate_at_k(y_true, y_scores, k=2) == 0.0
+
+
 class TestComputeAllMetrics:
     def test_returns_all_keys(self):
         y_true = np.array([1, 0, 1, 0, 0])
@@ -137,6 +173,10 @@ class TestComputeAllMetrics:
         result = compute_all_metrics(y_true, y_scores, ks=(5, 10))
         assert "recall@5" in result
         assert "recall@10" in result
+        assert "precision@5" in result
+        assert "precision@10" in result
+        assert "hit_rate@5" in result
+        assert "hit_rate@10" in result
         assert "ndcg@5" in result
         assert "ndcg@10" in result
         assert "mrr" in result
@@ -148,3 +188,5 @@ class TestComputeAllMetrics:
         result = compute_all_metrics(y_true, y_scores, ks=(2, 3))
         assert "recall@2" in result
         assert "recall@3" in result
+        assert "precision@2" in result
+        assert "hit_rate@2" in result
