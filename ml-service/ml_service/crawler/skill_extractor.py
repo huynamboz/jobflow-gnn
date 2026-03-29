@@ -119,22 +119,35 @@ class SkillExtractor:
     # Skill extraction
     # ------------------------------------------------------------------
 
+    # Single-char skills that need context to avoid false positives
+    _CONTEXT_REQUIRED: dict[str, re.Pattern] = {
+        "c": re.compile(r"\bC(?:\s*[/+]|(?:\s+(?:programming|language|developer|code)))", re.I),
+        "r": re.compile(r"\bR(?:\s+(?:programming|language|Studio|developer|statistical))", re.I),
+    }
+
     def _extract_skills(self, text: str) -> list[str]:
         """Find canonical skills mentioned in text.
 
         Strategy: split text into tokens/bigrams/trigrams,
         attempt to normalize each through the alias map.
         Deduplicate while preserving order.
+
+        Single-char skills ("c", "r") require context patterns to avoid
+        matching standalone letters in regular text.
         """
         seen: set[str] = set()
         result: list[str] = []
 
-        # Try normalizing individual words and n-grams
-        # Tokenize, then strip trailing dots/commas
+        # Tokenize, strip trailing punctuation
         words = [w.rstrip(".,;:") for w in re.findall(r"[\w#+.]+", text)]
-        candidates = list(words)
+        candidates: list[str] = []
 
-        # Add bigrams and trigrams
+        # Skip single-char tokens for unigrams (handled via context patterns)
+        for w in words:
+            if len(w) > 1:
+                candidates.append(w)
+
+        # Add bigrams and trigrams (these can capture "C++" "C#" etc.)
         for n in (2, 3):
             for i in range(len(words) - n + 1):
                 candidates.append(" ".join(words[i : i + n]))
@@ -142,6 +155,12 @@ class SkillExtractor:
         for candidate in candidates:
             canonical = self._norm.normalize(candidate)
             if canonical and canonical not in seen:
+                seen.add(canonical)
+                result.append(canonical)
+
+        # Check context-required skills separately
+        for canonical, pattern in self._CONTEXT_REQUIRED.items():
+            if canonical not in seen and pattern.search(text):
                 seen.add(canonical)
                 result.append(canonical)
 

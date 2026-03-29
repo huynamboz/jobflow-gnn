@@ -163,3 +163,40 @@ def build_job_similarity_edges(
             attr.append(sim)
 
     return [src, dst], attr
+
+
+def build_cv_similarity_edges(
+    cvs: list[CVData],
+    top_k: int = 5,
+    min_overlap: float = 0.3,
+) -> tuple[list[list[int]], list[float]]:
+    """Build CV → CV edges based on skill set similarity.
+
+    CVs with similar skill profiles are connected → if CV_A matches Job_X,
+    GNN propagates signal to CV_B (similar to CV_A).
+    """
+    n = len(cvs)
+    src, dst, attr = [], [], []
+
+    for i in range(n):
+        skills_i = set(cvs[i].skills)
+        if not skills_i:
+            continue
+        similarities: list[tuple[int, float]] = []
+        for j in range(i + 1, n):
+            skills_j = set(cvs[j].skills)
+            if not skills_j:
+                continue
+            union = skills_i | skills_j
+            overlap = len(skills_i & skills_j) / len(union) if union else 0.0
+            if overlap >= min_overlap:
+                similarities.append((j, overlap))
+
+        similarities.sort(key=lambda x: -x[1])
+        for j, sim in similarities[:top_k]:
+            # Bidirectional
+            src.extend([i, j])
+            dst.extend([j, i])
+            attr.extend([sim, sim])
+
+    return [src, dst], attr

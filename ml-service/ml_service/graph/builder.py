@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torch_geometric.data import HeteroData
 
-from ml_service.data.skill_graph import build_job_similarity_edges, build_skill_edges
+from ml_service.data.skill_graph import build_cv_similarity_edges, build_job_similarity_edges, build_skill_edges
 from ml_service.embedding.base import EmbeddingProvider
 from ml_service.graph.schema import (
     CVData,
@@ -14,8 +14,12 @@ from ml_service.graph.schema import (
     SkillCategory,
 )
 
-# Salary normalization constant (max monthly salary in dataset)
-_SALARY_NORM = 10_000.0
+def _minmax(arr: np.ndarray) -> np.ndarray:
+    """Min-max normalize array to [0, 1]."""
+    mn, mx = arr.min(), arr.max()
+    if mx - mn < 1e-8:
+        return np.full_like(arr, 0.5)
+    return (arr - mn) / (mx - mn)
 
 
 class GraphBuilder:
@@ -37,22 +41,23 @@ class GraphBuilder:
         skill_names = sorted(skill_catalog.keys())
         skill_to_idx = {s: i for i, s in enumerate(skill_names)}
 
-        # --- CV nodes: embedding(384) + experience_years + education_level = 386 ---
+        # --- CV nodes: embedding(384) + experience_years_norm + education_norm = 386 ---
         cv_texts = [cv.text for cv in cvs]
         cv_embeddings = self._embed.encode(cv_texts)  # (N, 384)
-        cv_extra = np.array(
-            [[cv.experience_years, float(cv.education)] for cv in cvs],
-            dtype=np.float32,
-        )
+        exp_years = np.array([cv.experience_years for cv in cvs], dtype=np.float32)
+        edu_levels = np.array([float(cv.education) for cv in cvs], dtype=np.float32)
+        # Min-max normalize
+        exp_norm = _minmax(exp_years)
+        edu_norm = _minmax(edu_levels)
+        cv_extra = np.stack([exp_norm, edu_norm], axis=1)
         data["cv"].x = torch.from_numpy(np.concatenate([cv_embeddings, cv_extra], axis=1))
 
         # --- Job nodes: embedding(384) + salary_min_norm + salary_max_norm = 386 ---
         job_texts = [job.text for job in jobs]
         job_embeddings = self._embed.encode(job_texts)  # (N, 384)
-        job_extra = np.array(
-            [[job.salary_min / _SALARY_NORM, job.salary_max / _SALARY_NORM] for job in jobs],
-            dtype=np.float32,
-        )
+        sal_min = np.array([float(job.salary_min) for job in jobs], dtype=np.float32)
+        sal_max = np.array([float(job.salary_max) for job in jobs], dtype=np.float32)
+        job_extra = np.stack([_minmax(sal_min), _minmax(sal_max)], axis=1)
         data["job"].x = torch.from_numpy(np.concatenate([job_embeddings, job_extra], axis=1))
 
         # --- Skill nodes: embedding(384) + category = 385 ---
@@ -130,6 +135,16 @@ class GraphBuilder:
             )
             data["job", "similar_to", "job"].edge_attr = torch.tensor(
                 job_edge_attr, dtype=torch.float
+            )
+
+        # --- cv → cv (similar_profile) edges: skill overlap ---
+        cv_edge_index, cv_edge_attr = build_cv_similarity_edges(cvs)
+        if cv_edge_index[0]:
+            data["cv", "similar_profile", "cv"].edge_index = torch.tensor(
+                cv_edge_index, dtype=torch.long
+            )
+            data["cv", "similar_profile", "cv"].edge_attr = torch.tensor(
+                cv_edge_attr, dtype=torch.float
             )
 
         # --- match / no_match label edges: CV -> Job ---

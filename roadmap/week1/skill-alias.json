@@ -8,7 +8,7 @@
       "2": "tool",
       "3": "domain"
     },
-    "total_canonical_skills": 75
+    "total_canonical_skills": 145
   },
 
   "skills": {
@@ -446,7 +446,298 @@
     "security": {
       "canonical": "security",
       "category": 3,
-      "aliases": ["Security", "Cybersecurity", "Application Security", "OAuth", "JWT", "Authentication", "Authorization"]
+      "aliases": ["Security", "Cybersecurity", "Application Security", "OAuth", "JWT", "Authentication", "Authorization", "SSO", "SAML", "LDAP"]
+    },
+
+    "nosql": {
+      "canonical": "nosql",
+      "category": 3,
+      "aliases": ["NoSQL", "nosql", "No SQL"]
+    },
+    "sql_server": {
+      "canonical": "sql_server",
+      "category": 2,
+      "aliases": ["SQL Server", "MSSQL", "MS SQL Server", "Microsoft SQL Server", "T-SQL", "TSQL"]
+    },
+    "oracle": {
+      "canonical": "oracle",
+      "category": 2,
+      "aliases": ["Oracle", "Oracle DB", "Oracle Database", "OracleDB", "PL/SQL", "PLSQL"]
+    },
+    "mariadb": {
+      "canonical": "mariadb",
+      "category": 2,
+      "aliases": ["MariaDB", "mariadb"]
+    },
+    "neo4j": {
+      "canonical": "neo4j",
+      "category": 2,
+      "aliases": ["Neo4j", "neo4j", "Neo4J"]
+    },
+    "bigquery": {
+      "canonical": "bigquery",
+      "category": 2,
+      "aliases": ["BigQuery", "Google BigQuery", "bigquery"]
+    },
+    "snowflake": {
+      "canonical": "snowflake",
+      "category": 2,
+      "aliases": ["Snowflake", "snowflake", "Snowpark"]
+    },
+    "databricks": {
+      "canonical": "databricks",
+      "category": 2,
+      "aliases": ["Databricks", "databricks"]
+    },
+    "dbt": {
+      "canonical": "dbt",
+      "category": 2,
+      "aliases": ["dbt", "DBT", "dbt Core", "dbt Cloud"]
+    },
+    "hadoop": {
+      "canonical": "hadoop",
+      "category": 2,
+      "aliases": ["Hadoop", "hadoop", "Apache Hadoop", "HDFS", "MapReduce"]
+    },
+    "hive": {
+      "canonical": "hive",
+      "category": 2,
+      "aliases": ["Hive", "Apache Hive", "HiveQL"]
+    },
+    "flink": {
+      "canonical": "flink",
+      "category": 2,
+      "aliases": ["Flink", "Apache Flink", "flink"]
+    },
+
+    "ansible": {
+      "canonical": "ansible",
+      "category": 2,
+      "aliases": ["Ansible", "ansible", "Ansible Tower", "AWX"]
+    },
+    "puppet": {
+      "canonical": "puppet",
+      "category": 2,
+      "aliases": ["Puppet", "puppet"]
+    },
+    "chef_tool": {
+      "canonical": "chef_tool",
+      "category": 2,
+      "aliases": ["Chef", "chef", "Chef Infra"]
+    },
+    "helm": {
+      "canonical": "helm",
+      "category": 2,
+      "aliases": ["Helm", "helm", "Helm Charts"]
+    },
+    "argocd": {
+      "canonical": "argocd",
+      "category": 2,
+      "aliases": ["ArgoCD", "Argo CD", "argocd"]
+    },
+    "pulumi": {
+      "canonical": "pulumi",
+      "category": 2,
+      "aliases": ["Pulumi", "pulumi"]
+    },
+
+    "prometheus": {
+      "canonical": "prometheus",
+      "category": 2,
+      "aliases": ["Prometheus", "prometheus"]
+    },
+    "grafana": {
+      "canonical": "grafana",
+      "category": 2,
+      "aliases": ["Grafana", "grafana"]
+    },
+    "datadog": {
+      "canonical": "datadog",
+      "category": 2,
+      "aliases": ["DataDog", "Datadog", "datadog"]
+    },
+    "splunk": {
+      "canonical": "splunk",
+      "category": 2,
+      "aliases": ["Splunk", "splunk"]
+    },
+    "new_relic": {
+      "canonical": "new_relic",
+      "category": 2,
+      "aliases": ["New Relic", "NewRelic", "new relic"]
+    },
+
+    "selenium": {
+      "canonical": "selenium",
+      "category": 2,
+      "aliases": ["Selenium", "selenium", "Selenium WebDriver"]
+    },
+    "cypress": {
+      "canonical": "cypress",
+      "category": 2,
+      "aliases": ["Cypress", "cypress", "Cypress.io"]
+    },
+    "playwright_tool": {
+      "canonical": "playwright_tool",
+      "category": 2,
+      "aliases": ["Playwright", "playwright"]
+    },
+
+    "perl": {
+      "canonical": "perl",
+      "category": 0,
+      "aliases": ["Perl", "perl"]
+    },
+    "powershell": {
+      "canonical": "powershell",
+      "category": 2,
+      "aliases": ["PowerShell", "powershell", "PS1"]
+    },
+    "nestjs": {
+      "canonical": "nestjs",
+      "category": 2,
+      "aliases": ["NestJS", "Nest.js", "nestjs"]
+    },
+
+    "jira": {
+      "canonical": "jira",
+      "category": 2,
+      "aliases": ["Jira", "jira", "JIRA", "Atlassian Jira"]
+    },
+    "confluence": {
+      "canonical": "confluence",
+      "category": 2,
+      "aliases": ["Confluence", "confluence", "Atlassian Confluence"]
+    },
+
+    "salesforce": {
+      "canonical": "salesforce",
+      "category": 2,
+      "aliases": ["Salesforce", "salesforce", "SFDC", "Salesforce CRM"]
+    },
+    "sap": {
+      "canonical": "sap",
+      "category": 2,
+      "aliases": ["SAP", "sap", "SAP ERP"]
+    },
+    "servicenow": {
+      "canonical": "servicenow",
+      "category": 2,
+      "aliases": ["ServiceNow", "servicenow", "Service Now"]
+    },
+
+    "tableau": {
+      "canonical": "tableau",
+      "category": 2,
+      "aliases": ["Tableau", "tableau"]
+    },
+    "power_bi": {
+      "canonical": "power_bi",
+      "category": 2,
+      "aliases": ["Power BI", "PowerBI", "power bi"]
+    },
+    "looker": {
+      "canonical": "looker",
+      "category": 2,
+      "aliases": ["Looker", "looker", "Looker Studio"]
+    },
+
+    "redux": {
+      "canonical": "redux",
+      "category": 2,
+      "aliases": ["Redux", "redux", "React Redux", "Redux Toolkit"]
+    },
+    "bootstrap": {
+      "canonical": "bootstrap",
+      "category": 2,
+      "aliases": ["Bootstrap", "bootstrap", "Bootstrap 5"]
+    },
+    "sass": {
+      "canonical": "sass",
+      "category": 2,
+      "aliases": ["Sass", "SASS", "SCSS", "scss"]
+    },
+
+    "firebase": {
+      "canonical": "firebase",
+      "category": 2,
+      "aliases": ["Firebase", "firebase", "Google Firebase"]
+    },
+    "serverless": {
+      "canonical": "serverless",
+      "category": 3,
+      "aliases": ["Serverless", "serverless", "AWS Lambda", "Lambda", "Azure Functions"]
+    },
+
+    "maven": {
+      "canonical": "maven",
+      "category": 2,
+      "aliases": ["Maven", "maven", "Apache Maven"]
+    },
+    "gradle": {
+      "canonical": "gradle",
+      "category": 2,
+      "aliases": ["Gradle", "gradle"]
+    },
+
+    "swagger": {
+      "canonical": "swagger",
+      "category": 2,
+      "aliases": ["Swagger", "swagger", "OpenAPI", "Open API"]
+    },
+    "websocket": {
+      "canonical": "websocket",
+      "category": 3,
+      "aliases": ["WebSocket", "WebSockets", "websocket"]
+    },
+
+    "langchain": {
+      "canonical": "langchain",
+      "category": 2,
+      "aliases": ["LangChain", "langchain", "Langchain"]
+    },
+    "mlflow": {
+      "canonical": "mlflow",
+      "category": 2,
+      "aliases": ["MLflow", "mlflow", "ML Flow"]
+    },
+    "sagemaker": {
+      "canonical": "sagemaker",
+      "category": 2,
+      "aliases": ["SageMaker", "AWS SageMaker", "sagemaker"]
+    },
+    "xgboost": {
+      "canonical": "xgboost",
+      "category": 2,
+      "aliases": ["XGBoost", "xgboost", "XGB"]
+    },
+
+    "nginx": {
+      "canonical": "nginx",
+      "category": 2,
+      "aliases": ["Nginx", "nginx", "NGINX"]
+    },
+    "apache_server": {
+      "canonical": "apache_server",
+      "category": 2,
+      "aliases": ["Apache", "Apache HTTP", "httpd"]
+    },
+
+    "vite": {
+      "canonical": "vite",
+      "category": 2,
+      "aliases": ["Vite", "vite", "Vite.js"]
+    },
+    "webpack": {
+      "canonical": "webpack",
+      "category": 2,
+      "aliases": ["Webpack", "webpack"]
+    },
+
+    "solidity": {
+      "canonical": "solidity",
+      "category": 0,
+      "aliases": ["Solidity", "solidity"]
     }
   }
 }

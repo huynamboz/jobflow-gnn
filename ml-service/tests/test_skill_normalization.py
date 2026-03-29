@@ -10,8 +10,7 @@ def normalizer(skill_alias_path):
 
 
 def test_canonical_skill_count(normalizer):
-    # skill-alias.json _meta says 75 but actual count is 85
-    assert len(normalizer.canonical_skills) == 85
+    assert len(normalizer.canonical_skills) == 140
 
 
 def test_normalize_exact(normalizer):
@@ -39,7 +38,7 @@ def test_normalize_unknown(normalizer):
 
 def test_skill_catalog(normalizer):
     catalog = normalizer.skill_catalog
-    assert len(catalog) == 85
+    assert len(catalog) == 140
     assert catalog["python"] == SkillCategory.TECHNICAL
     assert catalog["react"] == SkillCategory.TOOL
     assert catalog["communication"] == SkillCategory.SOFT

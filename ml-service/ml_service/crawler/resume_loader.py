@@ -5,6 +5,9 @@ Supports two datasets:
   - Suriyaganesh/54k-resume: 54.933 resumes, relational CSV (6 tables)
 
 Both are MIT license, IT-heavy, English.
+
+Skills are extracted from BOTH structured fields AND full text (summary,
+responsibilities, technical_environment, projects) to maximize coverage.
 """
 
 from __future__ import annotations
@@ -96,10 +99,15 @@ def load_kaggle_resumes(
 
 
 def _parse_resume(row: dict, cv_id: int, normalizer: SkillNormalizer) -> CVData | None:
-    """Convert a single HuggingFace dataset row to CVData."""
-    # --- Extract skills ---
+    """Convert a single HuggingFace dataset row to CVData.
+
+    Skills are extracted from TWO sources:
+    1. Structured skill fields (programming_languages, frameworks, etc.)
+    2. Full text scan (summary, responsibilities, technical_environment, projects)
+    This ensures skills mentioned in text but not in structured fields are captured.
+    """
+    # --- Extract skills from structured fields ---
     raw_skills = _extract_raw_skills(row.get("skills"))
-    # Normalize through alias map
     canonical_skills: list[str] = []
     seen: set[str] = set()
     for raw in raw_skills:
@@ -107,6 +115,14 @@ def _parse_resume(row: dict, cv_id: int, normalizer: SkillNormalizer) -> CVData 
         if canonical and canonical not in seen:
             seen.add(canonical)
             canonical_skills.append(canonical)
+
+    # --- Enrich: extract additional skills from full text ---
+    full_text = _collect_all_text(row)
+    text_skills = _extract_skills_from_text(full_text, normalizer)
+    for skill in text_skills:
+        if skill not in seen:
+            seen.add(skill)
+            canonical_skills.append(skill)
 
     if not canonical_skills:
         return None
@@ -135,6 +151,90 @@ def _parse_resume(row: dict, cv_id: int, normalizer: SkillNormalizer) -> CVData 
         skill_proficiencies=proficiencies,
         text=text,
     )
+
+
+def _collect_all_text(row: dict) -> str:
+    """Collect ALL text from a resume row for skill extraction.
+
+    Scans: summary, experience titles + responsibilities + technical_environment,
+    projects descriptions, certifications, internships.
+    """
+    parts: list[str] = []
+
+    # Summary
+    personal = row.get("personal_info")
+    if isinstance(personal, dict):
+        summary = personal.get("summary", "")
+        if summary and summary != "Unknown":
+            parts.append(summary)
+
+    # Experience: titles + responsibilities + technical environment
+    for exp in (row.get("experience") or []):
+        if not isinstance(exp, dict):
+            continue
+        title = exp.get("title", "")
+        if title and title != "Unknown":
+            parts.append(title)
+        for resp in (exp.get("responsibilities") or []):
+            if resp and resp != "Unknown":
+                parts.append(resp)
+        tech_env = exp.get("technical_environment", {})
+        if isinstance(tech_env, dict):
+            for key in ("technologies", "methodologies", "tools"):
+                items = tech_env.get(key, [])
+                if items:
+                    parts.append(" ".join(str(t) for t in items))
+
+    # Projects
+    for proj in (row.get("projects") or []):
+        if not isinstance(proj, dict):
+            continue
+        desc = proj.get("description", "")
+        if desc and desc != "Unknown":
+            parts.append(desc)
+        techs = proj.get("technologies", [])
+        if techs:
+            parts.append(" ".join(str(t) for t in techs))
+
+    # Certifications
+    for cert in (row.get("certifications") or []):
+        if isinstance(cert, dict):
+            name = cert.get("name", "")
+            if name and name != "Unknown":
+                parts.append(name)
+        elif isinstance(cert, str) and cert != "Unknown":
+            parts.append(cert)
+
+    return " ".join(parts)
+
+
+def _extract_skills_from_text(text: str, normalizer: SkillNormalizer) -> list[str]:
+    """Extract canonical skills from free text using n-gram matching.
+
+    Same strategy as SkillExtractor._extract_skills but for CV text.
+    Skips single-char tokens to avoid false positives.
+    """
+    if not text:
+        return []
+
+    seen: set[str] = set()
+    result: list[str] = []
+
+    words = [w.rstrip(".,;:") for w in re.findall(r"[\w#+.]+", text)]
+    candidates: list[str] = [w for w in words if len(w) > 1]
+
+    # Bigrams and trigrams
+    for n in (2, 3):
+        for i in range(len(words) - n + 1):
+            candidates.append(" ".join(words[i: i + n]))
+
+    for candidate in candidates:
+        canonical = normalizer.normalize(candidate)
+        if canonical and canonical not in seen:
+            seen.add(canonical)
+            result.append(canonical)
+
+    return result
 
 
 def _extract_raw_skills(skills_obj) -> list[str]:
@@ -235,7 +335,11 @@ def _infer_education(education) -> EducationLevel:
 
 
 def _build_text(row: dict, skills: list[str]) -> str:
-    """Build embedding text from resume fields."""
+    """Build rich embedding text from resume fields.
+
+    Includes summary, all experience titles + responsibilities, projects,
+    and skills. Truncated to ~500 words to stay within embedding model limits.
+    """
     parts: list[str] = []
 
     # Summary
@@ -245,7 +349,7 @@ def _build_text(row: dict, skills: list[str]) -> str:
         if summary and summary != "Unknown":
             parts.append(summary)
 
-    # Experience titles + responsibilities
+    # Experience titles + ALL responsibilities (not just first)
     for exp in (row.get("experience") or []):
         if not isinstance(exp, dict):
             continue
@@ -255,13 +359,34 @@ def _build_text(row: dict, skills: list[str]) -> str:
         for resp in (exp.get("responsibilities") or []):
             if resp and resp != "Unknown":
                 parts.append(resp)
-                break  # just first responsibility to keep text compact
+        # Technical environment
+        tech_env = exp.get("technical_environment", {})
+        if isinstance(tech_env, dict):
+            techs = tech_env.get("technologies", [])
+            if techs:
+                parts.append("Technologies: " + ", ".join(str(t) for t in techs[:10]))
+
+    # Projects
+    for proj in (row.get("projects") or []):
+        if not isinstance(proj, dict):
+            continue
+        name = proj.get("name", "")
+        desc = proj.get("description", "")
+        if name and name != "Unknown":
+            parts.append(f"Project: {name}")
+        if desc and desc != "Unknown":
+            parts.append(desc)
 
     # Skills
     if skills:
         parts.append("Skills: " + ", ".join(skills))
 
-    return ". ".join(parts) if parts else "Software developer"
+    text = ". ".join(parts) if parts else "Software developer"
+    # Truncate to ~500 words (embedding model limit)
+    words = text.split()
+    if len(words) > 500:
+        text = " ".join(words[:500])
+    return text
 
 
 # =========================================================================
@@ -349,6 +474,15 @@ def load_54k_resumes(
 
         raw_skills = skills_by_person.get(pid, [])
         canonical_skills = _normalize_skills_list(raw_skills, normalizer)
+
+        # Enrich: also extract skills from titles (often contain tech names)
+        title_text = " ".join(titles)
+        title_skills = _extract_skills_from_text(title_text, normalizer)
+        seen = set(canonical_skills)
+        for sk in title_skills:
+            if sk not in seen:
+                seen.add(sk)
+                canonical_skills.append(sk)
 
         if len(canonical_skills) < 2:
             skipped_no_skills += 1
