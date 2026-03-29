@@ -1,0 +1,452 @@
+{
+  "_meta": {
+    "description": "Skill alias dictionary — maps raw skill mentions to canonical skill names",
+    "canonical_format": "lowercase, underscores, no special chars",
+    "categories": {
+      "0": "technical",
+      "1": "soft",
+      "2": "tool",
+      "3": "domain"
+    },
+    "total_canonical_skills": 75
+  },
+
+  "skills": {
+
+    "python": {
+      "canonical": "python",
+      "category": 0,
+      "aliases": ["Python", "python3", "Python3", "python 3", "Python2", "python2"]
+    },
+    "javascript": {
+      "canonical": "javascript",
+      "category": 0,
+      "aliases": ["JavaScript", "JS", "js", "Javascript", "ECMAScript", "ES6", "ES2015", "ES2020"]
+    },
+    "typescript": {
+      "canonical": "typescript",
+      "category": 0,
+      "aliases": ["TypeScript", "Typescript"]
+    },
+    "java": {
+      "canonical": "java",
+      "category": 0,
+      "aliases": ["Java", "Java8", "Java 8", "Java11", "Java 11", "Java17", "Core Java"]
+    },
+    "kotlin": {
+      "canonical": "kotlin",
+      "category": 0,
+      "aliases": ["Kotlin", "Kotlin/JVM"]
+    },
+    "go": {
+      "canonical": "go",
+      "category": 0,
+      "aliases": ["Go", "Golang", "golang", "Go lang"]
+    },
+    "rust": {
+      "canonical": "rust",
+      "category": 0,
+      "aliases": ["Rust", "Rust lang", "rust-lang"]
+    },
+    "cpp": {
+      "canonical": "cpp",
+      "category": 0,
+      "aliases": ["C++", "c++", "CPP", "cpp", "C/C++"]
+    },
+    "c": {
+      "canonical": "c",
+      "category": 0,
+      "aliases": ["C language", "C programming", "ANSI C"]
+    },
+    "csharp": {
+      "canonical": "csharp",
+      "category": 0,
+      "aliases": ["C#", "c#", "C sharp", "CSharp", "dotnet C#"]
+    },
+    "php": {
+      "canonical": "php",
+      "category": 0,
+      "aliases": ["PHP", "php", "PHP8", "PHP7"]
+    },
+    "ruby": {
+      "canonical": "ruby",
+      "category": 0,
+      "aliases": ["Ruby", "ruby"]
+    },
+    "swift": {
+      "canonical": "swift",
+      "category": 0,
+      "aliases": ["Swift", "swift", "Swift 5"]
+    },
+    "scala": {
+      "canonical": "scala",
+      "category": 0,
+      "aliases": ["Scala", "scala"]
+    },
+    "r": {
+      "canonical": "r",
+      "category": 0,
+      "aliases": ["R", "R language", "R programming", "R Studio"]
+    },
+
+    "react": {
+      "canonical": "react",
+      "category": 2,
+      "aliases": ["React", "ReactJS", "React.js", "react.js", "React JS", "react-js"]
+    },
+    "nextjs": {
+      "canonical": "nextjs",
+      "category": 2,
+      "aliases": ["Next.js", "NextJS", "next.js", "Next JS"]
+    },
+    "vuejs": {
+      "canonical": "vuejs",
+      "category": 2,
+      "aliases": ["Vue", "Vue.js", "VueJS", "Vue JS", "vue.js"]
+    },
+    "angular": {
+      "canonical": "angular",
+      "category": 2,
+      "aliases": ["Angular", "AngularJS", "Angular.js", "Angular 2+", "Angular2"]
+    },
+    "nodejs": {
+      "canonical": "nodejs",
+      "category": 2,
+      "aliases": ["Node.js", "NodeJS", "Node JS", "node.js", "nodejs"]
+    },
+    "express": {
+      "canonical": "express",
+      "category": 2,
+      "aliases": ["Express", "Express.js", "ExpressJS", "express.js"]
+    },
+    "fastapi": {
+      "canonical": "fastapi",
+      "category": 2,
+      "aliases": ["FastAPI", "Fast API", "fastapi"]
+    },
+    "django": {
+      "canonical": "django",
+      "category": 2,
+      "aliases": ["Django", "django", "Django REST", "DRF", "Django REST Framework"]
+    },
+    "flask": {
+      "canonical": "flask",
+      "category": 2,
+      "aliases": ["Flask", "flask"]
+    },
+    "spring": {
+      "canonical": "spring",
+      "category": 2,
+      "aliases": ["Spring", "Spring Boot", "SpringBoot", "Spring Framework", "Spring MVC"]
+    },
+    "laravel": {
+      "canonical": "laravel",
+      "category": 2,
+      "aliases": ["Laravel", "laravel"]
+    },
+    "rails": {
+      "canonical": "rails",
+      "category": 2,
+      "aliases": ["Rails", "Ruby on Rails", "RoR", "rails"]
+    },
+
+    "postgresql": {
+      "canonical": "postgresql",
+      "category": 2,
+      "aliases": ["PostgreSQL", "Postgres", "postgres", "PSQL", "psql", "PostgresQL"]
+    },
+    "mysql": {
+      "canonical": "mysql",
+      "category": 2,
+      "aliases": ["MySQL", "mysql", "My SQL"]
+    },
+    "mongodb": {
+      "canonical": "mongodb",
+      "category": 2,
+      "aliases": ["MongoDB", "Mongo", "mongo", "mongodb"]
+    },
+    "redis": {
+      "canonical": "redis",
+      "category": 2,
+      "aliases": ["Redis", "redis"]
+    },
+    "elasticsearch": {
+      "canonical": "elasticsearch",
+      "category": 2,
+      "aliases": ["Elasticsearch", "ElasticSearch", "Elastic Search", "ES", "ELK"]
+    },
+    "sqlite": {
+      "canonical": "sqlite",
+      "category": 2,
+      "aliases": ["SQLite", "sqlite", "SQLite3"]
+    },
+    "cassandra": {
+      "canonical": "cassandra",
+      "category": 2,
+      "aliases": ["Cassandra", "Apache Cassandra", "cassandra"]
+    },
+    "dynamodb": {
+      "canonical": "dynamodb",
+      "category": 2,
+      "aliases": ["DynamoDB", "AWS DynamoDB", "dynamo"]
+    },
+
+    "aws": {
+      "canonical": "aws",
+      "category": 2,
+      "aliases": ["AWS", "Amazon Web Services", "Amazon AWS", "aws"]
+    },
+    "gcp": {
+      "canonical": "gcp",
+      "category": 2,
+      "aliases": ["GCP", "Google Cloud", "Google Cloud Platform", "gcp"]
+    },
+    "azure": {
+      "canonical": "azure",
+      "category": 2,
+      "aliases": ["Azure", "Microsoft Azure", "Azure Cloud", "azure"]
+    },
+    "docker": {
+      "canonical": "docker",
+      "category": 2,
+      "aliases": ["Docker", "docker", "Docker Container", "Containerization"]
+    },
+    "kubernetes": {
+      "canonical": "kubernetes",
+      "category": 2,
+      "aliases": ["Kubernetes", "K8s", "k8s", "kubernetes", "Kube"]
+    },
+    "terraform": {
+      "canonical": "terraform",
+      "category": 2,
+      "aliases": ["Terraform", "terraform", "Terraform IaC"]
+    },
+    "ci_cd": {
+      "canonical": "ci_cd",
+      "category": 2,
+      "aliases": ["CI/CD", "CI CD", "CICD", "Continuous Integration", "Continuous Deployment", "Continuous Delivery"]
+    },
+    "github_actions": {
+      "canonical": "github_actions",
+      "category": 2,
+      "aliases": ["GitHub Actions", "Github Actions", "GH Actions"]
+    },
+    "jenkins": {
+      "canonical": "jenkins",
+      "category": 2,
+      "aliases": ["Jenkins", "jenkins"]
+    },
+
+    "machine_learning": {
+      "canonical": "machine_learning",
+      "category": 3,
+      "aliases": ["Machine Learning", "ML", "machine learning", "ml"]
+    },
+    "deep_learning": {
+      "canonical": "deep_learning",
+      "category": 3,
+      "aliases": ["Deep Learning", "DL", "deep learning", "Neural Networks", "Neural Network"]
+    },
+    "pytorch": {
+      "canonical": "pytorch",
+      "category": 2,
+      "aliases": ["PyTorch", "pytorch", "Pytorch", "torch"]
+    },
+    "tensorflow": {
+      "canonical": "tensorflow",
+      "category": 2,
+      "aliases": ["TensorFlow", "Tensorflow", "tensorflow", "TF"]
+    },
+    "scikit_learn": {
+      "canonical": "scikit_learn",
+      "category": 2,
+      "aliases": ["scikit-learn", "sklearn", "Scikit-learn", "scikit learn", "Sklearn"]
+    },
+    "pandas": {
+      "canonical": "pandas",
+      "category": 2,
+      "aliases": ["Pandas", "pandas"]
+    },
+    "numpy": {
+      "canonical": "numpy",
+      "category": 2,
+      "aliases": ["NumPy", "numpy", "Numpy"]
+    },
+    "nlp": {
+      "canonical": "nlp",
+      "category": 3,
+      "aliases": ["NLP", "Natural Language Processing", "natural language processing", "Text Processing"]
+    },
+    "computer_vision": {
+      "canonical": "computer_vision",
+      "category": 3,
+      "aliases": ["Computer Vision", "Image Processing", "computer vision", "OpenCV"]
+    },
+    "llm": {
+      "canonical": "llm",
+      "category": 3,
+      "aliases": ["LLM", "Large Language Model", "Large Language Models", "GPT", "ChatGPT", "Generative AI", "GenAI"]
+    },
+    "data_science": {
+      "canonical": "data_science",
+      "category": 3,
+      "aliases": ["Data Science", "data science", "DS", "Data Analysis", "Data Analytics"]
+    },
+
+    "git": {
+      "canonical": "git",
+      "category": 2,
+      "aliases": ["Git", "git", "Version Control", "VCS"]
+    },
+    "bash": {
+      "canonical": "bash",
+      "category": 2,
+      "aliases": ["Bash", "bash", "Shell", "Shell Scripting", "Bash Scripting", "sh"]
+    },
+    "linux": {
+      "canonical": "linux",
+      "category": 2,
+      "aliases": ["Linux", "linux", "Ubuntu", "CentOS", "Debian", "Unix"]
+    },
+    "rest_api": {
+      "canonical": "rest_api",
+      "category": 3,
+      "aliases": ["REST API", "RESTful API", "REST", "RESTful", "REST APIs", "HTTP API"]
+    },
+    "graphql": {
+      "canonical": "graphql",
+      "category": 3,
+      "aliases": ["GraphQL", "graphql", "Graph QL"]
+    },
+    "grpc": {
+      "canonical": "grpc",
+      "category": 3,
+      "aliases": ["gRPC", "GRPC", "grpc", "Protocol Buffers", "protobuf"]
+    },
+    "microservices": {
+      "canonical": "microservices",
+      "category": 3,
+      "aliases": ["Microservices", "Microservice", "micro-services", "microservice architecture", "SOA"]
+    },
+    "kafka": {
+      "canonical": "kafka",
+      "category": 2,
+      "aliases": ["Kafka", "Apache Kafka", "kafka"]
+    },
+    "rabbitmq": {
+      "canonical": "rabbitmq",
+      "category": 2,
+      "aliases": ["RabbitMQ", "rabbitmq", "Rabbit MQ", "Message Queue", "MQ"]
+    },
+
+    "agile": {
+      "canonical": "agile",
+      "category": 1,
+      "aliases": ["Agile", "agile", "SCRUM", "Scrum", "Kanban", "kanban", "Agile methodology"]
+    },
+    "problem_solving": {
+      "canonical": "problem_solving",
+      "category": 1,
+      "aliases": ["Problem Solving", "problem solving", "Analytical Thinking", "Critical Thinking"]
+    },
+    "communication": {
+      "canonical": "communication",
+      "category": 1,
+      "aliases": ["Communication", "communication skills", "Verbal Communication", "Written Communication"]
+    },
+    "teamwork": {
+      "canonical": "teamwork",
+      "category": 1,
+      "aliases": ["Teamwork", "Team Player", "Collaboration", "Team Collaboration", "teamwork"]
+    },
+    "leadership": {
+      "canonical": "leadership",
+      "category": 1,
+      "aliases": ["Leadership", "leadership", "Team Lead", "Tech Lead", "People Management"]
+    },
+    "time_management": {
+      "canonical": "time_management",
+      "category": 1,
+      "aliases": ["Time Management", "time management", "Self-management", "Prioritization"]
+    },
+
+    "ios": {
+      "canonical": "ios",
+      "category": 3,
+      "aliases": ["iOS", "iOS development", "iPhone", "iPad", "UIKit", "SwiftUI"]
+    },
+    "android": {
+      "canonical": "android",
+      "category": 3,
+      "aliases": ["Android", "android", "Android development", "Jetpack Compose", "Android SDK"]
+    },
+    "react_native": {
+      "canonical": "react_native",
+      "category": 2,
+      "aliases": ["React Native", "ReactNative", "react-native", "RN"]
+    },
+    "flutter": {
+      "canonical": "flutter",
+      "category": 2,
+      "aliases": ["Flutter", "flutter", "Dart", "Flutter/Dart"]
+    },
+
+    "html_css": {
+      "canonical": "html_css",
+      "category": 0,
+      "aliases": ["HTML", "CSS", "HTML/CSS", "HTML5", "CSS3", "HTML & CSS", "HTML5/CSS3"]
+    },
+    "tailwind": {
+      "canonical": "tailwind",
+      "category": 2,
+      "aliases": ["Tailwind", "TailwindCSS", "Tailwind CSS", "tailwindcss"]
+    },
+    "figma": {
+      "canonical": "figma",
+      "category": 2,
+      "aliases": ["Figma", "figma"]
+    },
+
+    "sql": {
+      "canonical": "sql",
+      "category": 0,
+      "aliases": ["SQL", "sql", "Structured Query Language", "T-SQL", "PL/SQL", "TSQL"]
+    },
+    "data_engineering": {
+      "canonical": "data_engineering",
+      "category": 3,
+      "aliases": ["Data Engineering", "data engineering", "Data Pipeline", "ETL", "ELT"]
+    },
+    "spark": {
+      "canonical": "spark",
+      "category": 2,
+      "aliases": ["Spark", "Apache Spark", "PySpark", "pyspark", "spark"]
+    },
+    "airflow": {
+      "canonical": "airflow",
+      "category": 2,
+      "aliases": ["Airflow", "Apache Airflow", "airflow"]
+    },
+
+    "system_design": {
+      "canonical": "system_design",
+      "category": 3,
+      "aliases": ["System Design", "system design", "Software Architecture", "Architecture Design", "High-level design"]
+    },
+    "oop": {
+      "canonical": "oop",
+      "category": 3,
+      "aliases": ["OOP", "Object-Oriented Programming", "Object Oriented", "oop", "SOLID"]
+    },
+    "unit_testing": {
+      "canonical": "unit_testing",
+      "category": 3,
+      "aliases": ["Unit Testing", "unit testing", "TDD", "Test Driven Development", "Jest", "pytest", "JUnit"]
+    },
+    "security": {
+      "canonical": "security",
+      "category": 3,
+      "aliases": ["Security", "Cybersecurity", "Application Security", "OAuth", "JWT", "Authentication", "Authorization"]
+    }
+  }
+}
