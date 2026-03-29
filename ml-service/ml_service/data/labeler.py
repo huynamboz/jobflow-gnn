@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random as _random_mod
 
+from ml_service.data.skill_taxonomy import cluster_coverage
 from ml_service.graph.schema import CVData, DatasetSplit, JobData, LabeledPair
 
 
@@ -20,22 +21,45 @@ class PairLabeler:
         cvs: list[CVData],
         jobs: list[JobData],
         num_positive: int,
+        *,
+        cv_text_skills: dict[int, set[str]] | None = None,
+        job_clusters: dict[int, list[str]] | None = None,
+        noise_rate: float = 0.0,
     ) -> list[LabeledPair]:
         """Classify all CV-Job pairs, then sample with 1:1:2 ratio.
 
         Target: num_positive positives, num_positive easy negatives,
         2 * num_positive hard negatives  →  total = 4 * num_positive.
+
+        When cv_text_skills is provided, "effective skills" includes text-only
+        skills for labeling (but these are invisible to skill-overlap baseline).
+
+        When job_clusters is provided, cluster coverage is an additional
+        pathway to positive labeling.
         """
+        cv_text_skills = cv_text_skills or {}
+        job_clusters = job_clusters or {}
+
         positives: list[tuple[int, int]] = []
         easy_negs: list[tuple[int, int]] = []
         hard_negs: list[tuple[int, int]] = []
 
         for cv in cvs:
-            for job in jobs:
-                overlap = self._skill_overlap(cv, job)
-                dist = self._seniority_distance(cv, job)
+            # Effective skills = structured + text-only
+            effective_skills = set(cv.skills) | cv_text_skills.get(cv.cv_id, set())
 
-                if overlap >= 0.5 and dist <= 1:
+            for job in jobs:
+                overlap = self._skill_overlap_effective(effective_skills, job)
+                dist = self._seniority_distance(cv, job)
+                clusters = job_clusters.get(job.job_id, [])
+                clust_cov = cluster_coverage(effective_skills, clusters) if clusters else 0.0
+
+                is_positive = (
+                    (overlap >= 0.5 and dist <= 1)
+                    or (clust_cov >= 0.6 and dist <= 1)
+                )
+
+                if is_positive:
                     positives.append((cv.cv_id, job.job_id))
                 elif overlap < 0.2 or dist >= 3:
                     easy_negs.append((cv.cv_id, job.job_id))
@@ -59,6 +83,15 @@ class PairLabeler:
             pairs.append(LabeledPair(cv_id=cv_id, job_id=job_id, label=0))
         for cv_id, job_id in sampled_hard:
             pairs.append(LabeledPair(cv_id=cv_id, job_id=job_id, label=0))
+
+        # Apply label noise
+        if noise_rate > 0 and pairs:
+            n_flip = max(1, int(len(pairs) * noise_rate))
+            flip_indices = self._rng.sample(range(len(pairs)), min(n_flip, len(pairs)))
+            for i in flip_indices:
+                p = pairs[i]
+                flipped = 0 if p.label == 1 else 1
+                pairs[i] = LabeledPair(cv_id=p.cv_id, job_id=p.job_id, label=flipped)
 
         self._rng.shuffle(pairs)
         return pairs
@@ -108,6 +141,14 @@ class PairLabeler:
         cv_set = set(cv.skills)
         job_set = set(job.skills)
         return len(cv_set & job_set) / len(job_set)
+
+    @staticmethod
+    def _skill_overlap_effective(effective_skills: set[str], job: JobData) -> float:
+        """Fraction of job-required skills present in effective CV skills."""
+        if not job.skills:
+            return 0.0
+        job_set = set(job.skills)
+        return len(effective_skills & job_set) / len(job_set)
 
     @staticmethod
     def _seniority_distance(cv: CVData, job: JobData) -> int:

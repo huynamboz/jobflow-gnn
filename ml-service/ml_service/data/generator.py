@@ -3,6 +3,14 @@ from __future__ import annotations
 import random as _random_mod
 
 from ml_service.data.skill_normalization import SkillNormalizer
+from ml_service.data.skill_taxonomy import (
+    CLUSTER_DISPLAY_NAMES,
+    SKILL_CLUSTERS,
+    SKILL_SYNONYMS,
+    TEXT_TEMPLATES_CV,
+    TEXT_TEMPLATES_JOB,
+    TEXT_TEMPLATES_JOB_CLUSTER,
+)
 from ml_service.graph.schema import (
     SENIORITY_TO_SALARY_USD,
     SENIORITY_TO_YEARS,
@@ -128,21 +136,37 @@ _EDU_WEIGHTS: dict[SeniorityLevel, list[tuple[EducationLevel, float]]] = {
 
 
 class SyntheticDataGenerator:
-    def __init__(self, normalizer: SkillNormalizer, seed: int = 42) -> None:
+    def __init__(
+        self,
+        normalizer: SkillNormalizer,
+        seed: int = 42,
+        *,
+        synonym_rate: float = 0.0,
+        implicit_skill_rate: float = 0.0,
+        cluster_rate: float = 0.0,
+    ) -> None:
         self._norm = normalizer
         self._rng = _random_mod.Random(seed)
+        self._synonym_rate = synonym_rate
+        self._implicit_skill_rate = implicit_skill_rate
+        self._cluster_rate = cluster_rate
         self._skills_by_cat: dict[SkillCategory, list[str]] = {
             cat: normalizer.get_skills_by_category(cat) for cat in SkillCategory
         }
+        # Metadata populated during generation
+        self.cv_text_skills: dict[int, set[str]] = {}
+        self.job_clusters: dict[int, list[str]] = {}
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def generate_cvs(self, n: int) -> list[CVData]:
+        self.cv_text_skills = {}
         return [self._make_cv(i) for i in range(n)]
 
     def generate_jobs(self, n: int) -> list[JobData]:
+        self.job_clusters = {}
         return [self._make_job(i) for i in range(n)]
 
     # ------------------------------------------------------------------
@@ -173,6 +197,22 @@ class SyntheticDataGenerator:
             attempts += 1
         return sampled
 
+    def _skill_to_text(self, skill: str) -> str:
+        """Convert canonical skill to a surface form for text generation."""
+        if self._synonym_rate > 0 and self._rng.random() < self._synonym_rate:
+            synonyms = SKILL_SYNONYMS.get(skill)
+            if synonyms:
+                return self._rng.choice(synonyms)
+        return skill
+
+    def _natural_join(self, items: list[str]) -> str:
+        """Join items with commas and 'and': 'A, B, and C'."""
+        if len(items) <= 1:
+            return items[0] if items else ""
+        if len(items) == 2:
+            return f"{items[0]} and {items[1]}"
+        return ", ".join(items[:-1]) + ", and " + items[-1]
+
     def _make_cv(self, idx: int) -> CVData:
         seniority = self._weighted_choice(_CV_SENIORITY_WEIGHTS)
         yr_lo, yr_hi = SENIORITY_TO_YEARS[seniority]
@@ -180,21 +220,39 @@ class SyntheticDataGenerator:
 
         lo, hi = _CV_SKILL_COUNT[seniority]
         num_skills = self._rng.randint(lo, hi)
-        skills = self._sample_skills(seniority, num_skills)
+        all_skills = self._sample_skills(seniority, num_skills)
+
+        # Split into structured skills vs text-only skills
+        struct_skills = []
+        text_only_skills: set[str] = set()
+        for skill in all_skills:
+            if self._implicit_skill_rate > 0 and self._rng.random() < self._implicit_skill_rate:
+                text_only_skills.add(skill)
+            else:
+                struct_skills.append(skill)
+
+        # Ensure at least 2 structured skills remain
+        if len(struct_skills) < 2 and text_only_skills:
+            while len(struct_skills) < 2 and text_only_skills:
+                struct_skills.append(text_only_skills.pop())
+
+        if text_only_skills:
+            self.cv_text_skills[idx] = text_only_skills
 
         prof_lo, prof_hi = _PROFICIENCY_RANGE[seniority]
-        proficiencies = [self._rng.randint(prof_lo, prof_hi) for _ in skills]
+        proficiencies = [self._rng.randint(prof_lo, prof_hi) for _ in struct_skills]
 
         edu = self._weighted_choice(_EDU_WEIGHTS[seniority], is_list=True)
 
-        text = self._cv_text(seniority, skills, experience, edu)
+        # Text includes ALL skills (structured + text-only)
+        text = self._cv_text(seniority, all_skills, experience, edu)
 
         return CVData(
             cv_id=idx,
             seniority=seniority,
             experience_years=experience,
             education=edu,
-            skills=tuple(skills),
+            skills=tuple(struct_skills),
             skill_proficiencies=tuple(proficiencies),
             text=text,
         )
@@ -209,7 +267,15 @@ class SyntheticDataGenerator:
         salary_min = self._rng.randint(sal_lo, (sal_lo + sal_hi) // 2)
         salary_max = self._rng.randint((sal_lo + sal_hi) // 2, sal_hi)
 
-        text = self._job_text(seniority, skills, salary_min, salary_max)
+        # Optionally assign cluster requirements
+        clusters: list[str] = []
+        if self._cluster_rate > 0 and self._rng.random() < self._cluster_rate:
+            available = [c for c in SKILL_CLUSTERS if any(s in SKILL_CLUSTERS[c] for s in skills)]
+            if available:
+                clusters = [self._rng.choice(available)]
+                self.job_clusters[idx] = clusters
+
+        text = self._job_text(seniority, skills, salary_min, salary_max, clusters)
 
         return JobData(
             job_id=idx,
@@ -222,34 +288,53 @@ class SyntheticDataGenerator:
         )
 
     # ------------------------------------------------------------------
-    # Text templates (simple English for embedding)
+    # Text generation
     # ------------------------------------------------------------------
 
-    @staticmethod
     def _cv_text(
+        self,
         seniority: SeniorityLevel,
         skills: list[str],
         experience: float,
         edu: EducationLevel,
     ) -> str:
-        skill_str = ", ".join(skills)
+        skill_texts = [self._skill_to_text(s) for s in skills]
+        skills_str = self._natural_join(skill_texts)
         title = seniority.name.capitalize()
-        return (
-            f"{title} software engineer with {experience} years of experience. "
-            f"Education: {edu.name.lower()}. "
-            f"Skills: {skill_str}."
+        template = self._rng.choice(TEXT_TEMPLATES_CV)
+        return template.format(
+            title=title,
+            exp=experience,
+            skills=skills_str,
+            edu=edu.name.lower(),
         )
 
-    @staticmethod
     def _job_text(
+        self,
         seniority: SeniorityLevel,
         skills: list[str],
         salary_min: int,
         salary_max: int,
+        clusters: list[str],
     ) -> str:
-        skill_str = ", ".join(skills)
-        return (
-            f"Hiring {seniority.name.lower()} software engineer. "
-            f"Required skills: {skill_str}. "
-            f"Salary range: ${salary_min}-${salary_max} USD/month."
+        skill_texts = [self._skill_to_text(s) for s in skills]
+        skills_str = self._natural_join(skill_texts)
+
+        if clusters:
+            cluster_name = CLUSTER_DISPLAY_NAMES.get(clusters[0], clusters[0])
+            template = self._rng.choice(TEXT_TEMPLATES_JOB_CLUSTER)
+            return template.format(
+                level=seniority.name.lower(),
+                cluster_name=cluster_name,
+                skills=skills_str,
+                sal_min=salary_min,
+                sal_max=salary_max,
+            )
+
+        template = self._rng.choice(TEXT_TEMPLATES_JOB)
+        return template.format(
+            level=seniority.name.lower(),
+            skills=skills_str,
+            sal_min=salary_min,
+            sal_max=salary_max,
         )
