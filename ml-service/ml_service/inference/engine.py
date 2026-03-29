@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class MatchResult:
-    """Single CV match result."""
+    """Single CV match result (JD → CVs)."""
 
     cv_id: int
     score: float
@@ -38,6 +38,20 @@ class MatchResult:
     matched_skills: tuple[str, ...]
     missing_skills: tuple[str, ...]
     seniority_match: bool
+
+
+@dataclass(frozen=True)
+class JobMatchResult:
+    """Single Job match result (CV → Jobs)."""
+
+    job_id: int
+    score: float
+    eligible: bool
+    matched_skills: tuple[str, ...]
+    missing_skills: tuple[str, ...]
+    seniority_match: bool
+    title: str = ""
+    company: str = ""
 
 
 class InferenceEngine:
@@ -169,13 +183,60 @@ class InferenceEngine:
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_k]
 
+    def match_cv(self, cv: CVData, top_k: int = 10) -> list[JobMatchResult]:
+        """Match a CV against all Jobs. Returns Top K ranked jobs."""
+        results: list[JobMatchResult] = []
+        for job in self._jobs:
+            score = self._score_pair(cv, job)
+            cv_skills = set(cv.skills)
+            job_skills = set(job.skills)
+
+            # Extract title from job text (first sentence)
+            title = job.text.split(".")[0] if job.text else ""
+
+            results.append(
+                JobMatchResult(
+                    job_id=job.job_id,
+                    score=round(score, 4),
+                    eligible=score >= self._threshold,
+                    matched_skills=tuple(sorted(cv_skills & job_skills)),
+                    missing_skills=tuple(sorted(job_skills - cv_skills)),
+                    seniority_match=abs(int(cv.seniority) - int(job.seniority)) <= 1,
+                    title=title,
+                )
+            )
+
+        results.sort(key=lambda r: r.score, reverse=True)
+        return results[:top_k]
+
+    def match_cv_text(self, cv_text: str, top_k: int = 10) -> list[JobMatchResult]:
+        """Match raw CV text against all Jobs."""
+        from ml_service.cv_parser import CVParser
+
+        parser = CVParser(self._normalizer)
+        cv = parser.parse_text(cv_text, cv_id=-1)
+
+        if not cv.skills:
+            logger.warning("No skills extracted from CV text")
+            return []
+
+        return self.match_cv(cv, top_k=top_k)
+
     @property
     def num_cvs(self) -> int:
         return len(self._cvs)
 
     @property
+    def num_jobs(self) -> int:
+        return len(self._jobs)
+
+    @property
     def cv_pool(self) -> list[CVData]:
         return list(self._cvs)
+
+    @property
+    def job_pool(self) -> list[JobData]:
+        return list(self._jobs)
 
     # ------------------------------------------------------------------
     # Internal
