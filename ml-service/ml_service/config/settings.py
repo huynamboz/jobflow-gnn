@@ -18,6 +18,24 @@ class Settings(BaseSettings):
     num_positive_pairs: int = 2000
     random_seed: int = 42
 
+    # GNN architecture
+    gnn_hidden_channels: int = 128
+    gnn_num_layers: int = 2
+
+    # Training
+    learning_rate: float = 1e-3
+    weight_decay: float = 1e-5
+    num_epochs: int = 50
+    early_stopping_patience: int = 10
+
+    # Hybrid scoring weights (alpha + beta + gamma = 1.0)
+    hybrid_alpha: float = 0.6  # GNN score weight
+    hybrid_beta: float = 0.3  # Skill overlap weight
+    hybrid_gamma: float = 0.1  # Seniority match weight
+
+    # Eligibility threshold for final recommendations
+    eligibility_threshold: float = 0.65
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
