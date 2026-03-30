@@ -93,8 +93,8 @@ class InferenceEngine:
         self._gamma = gamma
         self._threshold = threshold
 
-        # Precompute CV embeddings from GNN
-        self._cv_embeddings = self._precompute_cv_embeddings()
+        # Precompute CV + Job embeddings from GNN
+        self._cv_embeddings, self._job_embeddings, self._z_dict = self._precompute_embeddings()
 
         # Build skill similarity lookup from co-occurrence graph
         self._skill_similarity = self._build_skill_similarity(cvs, jobs)
@@ -340,32 +340,81 @@ class InferenceEngine:
     # Internal
     # ------------------------------------------------------------------
 
-    def _precompute_cv_embeddings(self) -> torch.Tensor:
-        """Run GNN encode once on the full graph, extract CV embeddings."""
-        self._model.eval()
-        data_prepared = prepare_data_for_gnn(self._data)
+    def _precompute_embeddings(self) -> tuple[torch.Tensor, torch.Tensor, dict]:
+        """Run GNN encode once on the full graph.
 
-        # Strip label edges for clean inference
+        Returns (cv_embeddings, job_embeddings, z_dict).
+        """
+        self._model.eval()
         from ml_service.training.trainer import _strip_label_edges
 
-        data_clean = _strip_label_edges(data_prepared)
+        data_clean = _strip_label_edges(self._data)
         data_clean = prepare_data_for_gnn(data_clean)
 
         with torch.no_grad():
             z_dict = self._model.encode(data_clean)
-        return z_dict["cv"]  # [num_cvs, hidden_channels]
+        return z_dict["cv"], z_dict["job"], z_dict
+
+    def _gnn_score_for_job(self, cv: CVData, job: JobData) -> float:
+        """Compute GNN-based similarity between CV and Job.
+
+        If job is in the graph (has precomputed embedding), use GNN decode.
+        Otherwise fall back to text similarity.
+        """
+        job_idx = next(
+            (i for i, j in enumerate(self._jobs) if j.job_id == job.job_id),
+            None,
+        )
+        if job_idx is not None and self._cv_embeddings is not None and self._job_embeddings is not None:
+            # Use precomputed GNN job embedding + text embedding for CV
+            job_emb = self._job_embeddings[job_idx]  # [hidden]
+
+            # For new CV: use text embedding cosine as proxy for CV GNN embedding
+            # (real inductive inference would require adding CV to graph)
+            cv_text_emb = self._embed.encode([cv.text])[0]
+            job_text_emb = self._embed.encode([job.text])[0]
+
+            # Blend: GNN job embedding similarity + text similarity
+            text_sim = self._cosine(cv_text_emb, job_text_emb)
+
+            # Use decoder if CV is in graph
+            cv_idx = next(
+                (i for i, c in enumerate(self._cvs) if c.cv_id == cv.cv_id),
+                None,
+            )
+            if cv_idx is not None:
+                # Both in graph → real GNN decode
+                cv_idx_t = torch.tensor([cv_idx], dtype=torch.long)
+                job_idx_t = torch.tensor([job_idx], dtype=torch.long)
+                with torch.no_grad():
+                    gnn_raw = self._model.decode(self._z_dict, cv_idx_t, job_idx_t).item()
+                # Normalize to [0, 1] using sigmoid
+                gnn_norm = 1.0 / (1.0 + np.exp(-gnn_raw))
+                # Blend GNN decode + text similarity
+                return 0.6 * gnn_norm + 0.4 * text_sim
+            else:
+                return text_sim
+
+        return self._text_similarity(cv, job)
+
+    @staticmethod
+    def _cosine(a: np.ndarray, b: np.ndarray) -> float:
+        na, nb = np.linalg.norm(a), np.linalg.norm(b)
+        if na == 0 or nb == 0:
+            return 0.0
+        return float((np.dot(a, b) / (na * nb) + 1.0) / 2.0)
 
     def _score_pair(self, cv: CVData, job: JobData) -> float:
-        """Hybrid score with semantic skills, must-have penalty, and role penalty.
+        """Hybrid score with GNN, semantic skills, penalties.
 
         Components:
-        1. Text similarity (α=0.55) — semantic matching
+        1. GNN score (α=0.55) — real GNN decode if both in graph, else text similarity
         2. Semantic skill overlap (β=0.30) — weighted + related skills from graph
         3. Seniority match (γ=0.15) — stricter penalty
         4. Must-have penalty — cap score if missing required skills
         5. Role penalty — mismatch between CV role and JD role
         """
-        gnn_score = self._text_similarity(cv, job)
+        gnn_score = self._gnn_score_for_job(cv, job)
 
         # Semantic skill overlap: direct + related skills via graph
         skill_score = self._semantic_skill_overlap(cv, job)

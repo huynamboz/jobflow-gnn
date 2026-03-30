@@ -45,7 +45,7 @@ Per-type Projection → GraphSAGE (2-3 layers, mean aggregation) → MLPDecoder
 ### Graph Schema
 
 ```
-4 node types: CV(386), Job(386), Skill(143), Seniority(6)
+4 node types: CV(386), Job(386), Skill(208), Seniority(6)
 9 edge types:
   Core:   has_skill, requires_skill, has_seniority, requires_seniority, match, no_match
   Enrich: skill→skill (co-occurrence PMI), job→job (similarity), cv→cv (similarity)
@@ -287,7 +287,7 @@ security ↔ devops, backend
 
 ### Skill Dictionary
 
-- **143 canonical skills** organized by category (technical, soft, tool, domain)
+- **208 canonical skills** organized by category (technical, soft, tool, domain)
 - **Alias mapping:** "ReactJS" → "react", "K8s" → "kubernetes", etc.
 - **Skill graph:** PMI co-occurrence → 3.613 skill pairs
 
@@ -302,36 +302,61 @@ security ↔ devops, backend
 
 ## 9. Kết quả
 
-### Benchmark (4.7K real JDs + 2K real CVs)
+### Benchmark (4.7K real JDs + 1K real CVs)
 
 ```
-GNN AUC-ROC: 0.65 — beats all baselines
-Reranker accuracy: 77.8% (MLP trên 20 features)
-Calibration accuracy: balanced fit (a=0.865, b=-0.379)
+GNN AUC-ROC: 0.6815 (was 0.63 before skill expansion)
+Reranker accuracy: 77.2% (MLP trên 20 features)
+Calibration: balanced Platt scaling (a=0.865, b=-0.379)
+Skill coverage: 208 skills, JD-CV overlap 80 skills
 ```
 
-### Inference Demo (CV: Frontend developer, React/Vue/TypeScript, 3 năm)
+### GNN Inductive Inference
 
 ```
-#1 Software Engineer       0.70  eligible ✅  matched: vuejs, react, typescript, rest_api, git, nodejs, html_css, javascript
-#2 Web Developer           0.79  eligible ✅  matched: vuejs, react, sass, ci_cd, rest_api, git, html_css, javascript
-#3 Drupal Frontend Dev     0.70  eligible ✅  matched: vuejs, react, mysql, git, html_css, javascript
-#4 Technical Writer        0.69  eligible ✅  matched: ci_cd, git, html_css, javascript, jira
-#5 React Developer         0.83  eligible ✅  matched: react, tailwind, typescript, rest_api, git, html_css, javascript
+CV in graph:  real GNN decode → sigmoid(decoder(z_cv, z_job))
+              blended 0.6×GNN + 0.4×text similarity
+CV new upload: fallback to text similarity (MiniLM cosine)
 ```
 
-**Không có AI/ML/Security/SAP/Payroll trong top 10 ✅**
+Precompute cả CV + Job GNN embeddings tại init. z_dict cached cho fast decode.
+
+### Inference Demo
+
+**CV 1: Vue/React Frontend developer, 3 năm kinh nghiệm**
+
+```
+#1 React Developer        0.81  ✅  matched: react, typescript, tailwind, rest_api, git, html_css, javascript
+#2 Web Developer           0.79  ✅  matched: vuejs, react, sass, ci_cd, rest_api, git, html_css, javascript
+#3 Technical Writer        0.68  ✅
+#4 IT Developer            0.66  ✅  matched: mongodb, mysql, nodejs, react, rest_api, git, javascript
+#5 Software Engineer       0.66  ✅  matched: vuejs, react, typescript, nodejs, html_css, javascript
+```
+
+**CV 2: React/AI student, 1 năm kinh nghiệm**
+
+```
+#1 IT Developer            0.66  ✅  matched: express, mongodb, nodejs, postgresql, python, react, rest_api, git, javascript
+#2 React Developer         0.82  ✅  matched: nextjs, react, redux, typescript, rest_api, git, html_css, javascript
+#3 Front End Developer     0.70  ✅  matched: nextjs, react, typescript, javascript
+#4 Web Developer           0.69  ✅  matched: figma, react, rest_api, git, html_css, javascript
+#5 Software Engineer (Viz) 0.70  ✅  matched: machine_learning, python, react, typescript, javascript
+```
+
+**Không có AI/ML/Security/SAP trong top 10 cho cả 2 CVs ✅**
 **Tất cả eligible=true với calibrated threshold ✅**
+**New skills detected: nextjs, redux, figma, express, material_ui, machine_learning ✅**
 
 ### Improvement journey
 
 | Version | Top issue | Fix | Result |
 |---------|-----------|-----|--------|
 | v1 | AI jobs in top 3 cho Frontend CV | — | Sai role matching |
-| v2 | Text similarity dominate (α=0.85) | Role penalty + rebalance weights | AI jobs tụt xuống #9 |
-| v3 | Missing required skills không bị penalty | Must-have cap + semantic skills | AI jobs biến mất khỏi top 10 |
-| v4 | Scores quá thấp (reranker probability) | Tách order/score/eligibility | Scores 0.69-0.83, all eligible |
+| v2 | Text dominate (α=0.85) | Role penalty + rebalance weights | AI jobs tụt xuống #9 |
+| v3 | Missing required skills | Must-have cap + semantic skills | AI jobs biến mất |
+| v4 | Scores quá thấp | Tách order/score/eligibility | Scores 0.66-0.83 |
 | v5 | Calibration imbalanced | Balanced Platt scaling | Threshold meaningful |
+| v6 | Skill coverage 143 | Expand 208 skills + GNN decode | AUC +5%, 80 shared skills |
 
 ---
 
