@@ -1,10 +1,9 @@
-"""Inference engine — input JD text, output ranked CVs with scores.
+"""Two-stage inference engine for CV-Job matching.
 
-Design:
-  1. CV embeddings are precomputed once at init (or load from checkpoint)
-  2. New JD → extract skills → build temp node → encode → score against all CVs
-  3. Hybrid scoring: α×GNN + β×skill_overlap + γ×seniority_match
-  4. Return Top K results with eligible flag
+Stage 1 (Retrieve): Fast scoring via text similarity → top N candidates
+Stage 2 (Rerank):   XGBoost on rich feature vectors → final top K
+
+If reranker is not trained, falls back to hybrid scoring (v3).
 """
 
 from __future__ import annotations
@@ -26,6 +25,8 @@ from ml_service.graph.schema import CVData, JobData, SeniorityLevel
 from ml_service.inference.checkpoint import load_checkpoint
 from ml_service.inference.role_classifier import infer_role, role_match_penalty
 from ml_service.models.gnn import HeteroGraphSAGE, prepare_data_for_gnn
+from ml_service.reranker.features import FeatureExtractor
+from ml_service.reranker.ranker import Reranker
 
 logger = logging.getLogger(__name__)
 
@@ -97,9 +98,23 @@ class InferenceEngine:
         # Build skill similarity lookup from co-occurrence graph
         self._skill_similarity = self._build_skill_similarity(cvs, jobs)
 
+        # Feature extractor + reranker (Stage 2)
+        self._feature_extractor = FeatureExtractor(
+            embedding_provider=embedding_provider,
+            skill_similarity=self._skill_similarity,
+            skill_categories={s: int(c) for s, c in normalizer.skill_catalog.items()},
+        )
+        self._reranker = Reranker(self._feature_extractor)
+
+        # Try loading saved reranker
+        ckpt = Path("checkpoints/latest")
+        if (ckpt / "reranker.pt").exists():
+            self._reranker.load(ckpt)
+
         logger.info(
-            "InferenceEngine ready: %d CVs, %d jobs, %d skill-pairs, threshold=%.2f",
-            len(cvs), len(jobs), len(self._skill_similarity), threshold,
+            "InferenceEngine ready: %d CVs, %d jobs, %d skill-pairs, reranker=%s",
+            len(cvs), len(jobs), len(self._skill_similarity),
+            "trained" if self._reranker.is_trained else "fallback",
         )
 
     @classmethod
@@ -188,22 +203,57 @@ class InferenceEngine:
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_k]
 
-    def match_cv(self, cv: CVData, top_k: int = 10) -> list[JobMatchResult]:
-        """Match a CV against all Jobs. Returns Top K ranked jobs."""
-        results: list[JobMatchResult] = []
-        for job in self._jobs:
-            score = self._score_pair(cv, job)
-            cv_skills = set(cv.skills)
-            job_skills = set(job.skills)
+    def match_cv(self, cv: CVData, top_k: int = 10, retrieve_n: int = 50) -> list[JobMatchResult]:
+        """Two-stage matching: CV against all Jobs.
 
-            # Extract title from job text (first sentence)
+        Stage 1 (Retrieve): Fast hybrid scoring → top N candidates
+        Stage 2 (Rerank):   XGBoost on feature vectors → final top K
+        If reranker not trained, Stage 1 scores are final.
+        """
+        cv_skills = set(cv.skills)
+
+        # --- Stage 1: Fast retrieve top N ---
+        stage1_scores: list[tuple[int, float]] = []
+        for i, job in enumerate(self._jobs):
+            score = self._score_pair(cv, job)
+            stage1_scores.append((i, score))
+
+        stage1_scores.sort(key=lambda x: -x[1])
+        candidates = stage1_scores[:retrieve_n]
+
+        # --- Stage 2: Rerank determines ORDER, Stage 1 keeps SCORE ---
+        # Reranker only changes ranking, not the score itself.
+        # Stage 1 score = display score + eligibility check.
+        if self._reranker.is_trained:
+            cand_indices = [idx for idx, _ in candidates]
+            stage1_score_map = {idx: s for idx, s in candidates}
+            rerank_probs = self._reranker.score_batch(
+                [cv] * len(cand_indices),
+                self._jobs,
+                list(range(len(cand_indices))),
+                cand_indices,
+            )
+            # Sort by reranker probability (ordering) but keep stage1 score (display)
+            reranked = sorted(
+                zip(cand_indices, rerank_probs),
+                key=lambda x: -x[1],
+            )
+            scored = [(idx, stage1_score_map[idx]) for idx, _ in reranked]
+        else:
+            scored = candidates
+
+        # --- Build results ---
+        results: list[JobMatchResult] = []
+        for job_idx, score in scored[:top_k]:
+            job = self._jobs[job_idx]
+            job_skills = set(job.skills)
             title = job.text.split(".")[0] if job.text else ""
 
             results.append(
                 JobMatchResult(
                     job_id=job.job_id,
-                    score=round(score, 4),
-                    eligible=score >= self._threshold,
+                    score=round(float(score), 4),
+                    eligible=float(score) >= self._threshold,
                     matched_skills=tuple(sorted(cv_skills & job_skills)),
                     missing_skills=tuple(sorted(job_skills - cv_skills)),
                     seniority_match=abs(int(cv.seniority) - int(job.seniority)) <= 1,
@@ -211,8 +261,7 @@ class InferenceEngine:
                 )
             )
 
-        results.sort(key=lambda r: r.score, reverse=True)
-        return results[:top_k]
+        return results
 
     def match_cv_text(self, cv_text: str, top_k: int = 10) -> list[JobMatchResult]:
         """Match raw CV text against all Jobs."""
@@ -226,6 +275,28 @@ class InferenceEngine:
             return []
 
         return self.match_cv(cv, top_k=top_k)
+
+    def train_reranker(
+        self,
+        cv_indices: list[int],
+        job_indices: list[int],
+        labels: list[int],
+    ) -> dict[str, float]:
+        """Train the Stage 2 XGBoost reranker on labeled pairs."""
+        metrics = self._reranker.train(
+            self._cvs, self._jobs, cv_indices, job_indices, labels,
+        )
+        if self._reranker.is_trained:
+            self._reranker.save(Path("checkpoints/latest"))
+        return metrics
+
+    @property
+    def reranker(self) -> Reranker:
+        return self._reranker
+
+    @property
+    def feature_extractor(self) -> FeatureExtractor:
+        return self._feature_extractor
 
     @property
     def num_cvs(self) -> int:
@@ -297,6 +368,9 @@ class InferenceEngine:
         # Must-have penalty: cap score if missing high-importance skills
         score = self._apply_must_have_penalty(score, cv, job)
 
+        # Edge case penalties
+        score = self._apply_edge_case_penalties(score, cv, job)
+
         return score
 
     def _semantic_skill_overlap(self, cv: CVData, job: JobData) -> float:
@@ -356,6 +430,43 @@ class InferenceEngine:
             return min(score, 0.55)
         elif missing_required == 1:
             return min(score, 0.70)
+        return score
+
+    @staticmethod
+    def _apply_edge_case_penalties(score: float, cv: CVData, job: JobData) -> float:
+        """Apply penalties for edge cases.
+
+        1. Generic CV: too few distinctive skills → penalty
+        2. Overqualified: senior applying to intern/junior → penalty
+        3. Tool-heavy match: matched only tools (git, jira) not core skills → penalty
+        """
+        cv_set = set(cv.skills)
+        job_set = set(job.skills)
+        intersection = cv_set & job_set
+
+        # 1. Generic CV: fewer than 4 skills → likely matches everything poorly
+        if len(cv_set) < 4:
+            score *= 0.85
+
+        # 2. Overqualified: senior/lead CV for intern/junior job
+        cv_level = int(cv.seniority)
+        job_level = int(job.seniority)
+        if cv_level >= 3 and job_level <= 1:  # senior+ applying to junior/intern
+            score *= 0.8
+
+        # 3. Tool-heavy match: if all matched skills are tools (category=2), penalize
+        # because matching only git+jira is not a real match
+        if intersection:
+            # Check how many matched skills are tools vs technical
+            _TOOL_SKILLS = {
+                "git", "jira", "confluence", "docker", "jenkins",
+                "ci_cd", "npm", "vite", "webpack",
+            }
+            tool_matches = intersection & _TOOL_SKILLS
+            core_matches = intersection - _TOOL_SKILLS
+            if len(tool_matches) > 0 and len(core_matches) == 0:
+                score *= 0.75  # only tools matched, no core skills
+
         return score
 
     @staticmethod

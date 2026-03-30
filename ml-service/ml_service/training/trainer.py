@@ -62,13 +62,17 @@ def _sample_bpr_pairs(
     cv_id_to_idx: dict[int, int],
     job_id_to_idx: dict[int, int],
     num_jobs: int,
+    *,
+    hard_neg_ratio: float = 0.7,
+    cvs: list[CVData] | None = None,
+    jobs: list[JobData] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Sample (cv, pos_job, neg_job) BPR triplets from labeled pairs.
+    """Sample (cv, pos_job, neg_job) BPR triplets with hard negative priority.
 
-    For each positive pair, sample a negative job. If the CV has explicit
-    negative pairs, sample from those; otherwise, sample a random job.
+    Hard negatives (same role, similar skills, wrong match) are sampled
+    with probability `hard_neg_ratio`. This forces GNN to learn subtle
+    differences like Flask vs React, not just Frontend vs DevOps.
     """
-    # Group positives and negatives by CV
     pos_by_cv: dict[int, list[int]] = {}
     neg_by_cv: dict[int, list[int]] = {}
     for p in pairs:
@@ -79,15 +83,60 @@ def _sample_bpr_pairs(
         else:
             neg_by_cv.setdefault(p.cv_id, []).append(job_id_to_idx[p.job_id])
 
+    # Split negatives into hard vs easy (if CV/job data available)
+    hard_neg_by_cv: dict[int, list[int]] = {}
+    easy_neg_by_cv: dict[int, list[int]] = {}
+
+    if cvs and jobs:
+        cv_idx_to_data = {cv_id_to_idx.get(cv.cv_id): cv for cv in cvs if cv.cv_id in cv_id_to_idx}
+        job_idx_to_data = {job_id_to_idx.get(j.job_id): j for j in jobs if j.job_id in job_id_to_idx}
+
+        for cv_id, neg_jobs in neg_by_cv.items():
+            cv_idx = cv_id_to_idx[cv_id]
+            cv_data = cv_idx_to_data.get(cv_idx)
+            if not cv_data:
+                easy_neg_by_cv[cv_id] = neg_jobs
+                continue
+
+            cv_skills = set(cv_data.skills)
+            hard, easy = [], []
+            for job_idx in neg_jobs:
+                job_data = job_idx_to_data.get(job_idx)
+                if job_data:
+                    job_skills = set(job_data.skills)
+                    union = cv_skills | job_skills
+                    overlap = len(cv_skills & job_skills) / len(union) if union else 0
+                    sen_dist = abs(int(cv_data.seniority) - int(job_data.seniority))
+                    # Hard: some overlap + similar seniority (subtle mismatch)
+                    if overlap >= 0.15 and sen_dist <= 1:
+                        hard.append(job_idx)
+                    else:
+                        easy.append(job_idx)
+                else:
+                    easy.append(job_idx)
+
+            hard_neg_by_cv[cv_id] = hard
+            easy_neg_by_cv[cv_id] = easy
+    else:
+        for cv_id, neg_jobs in neg_by_cv.items():
+            easy_neg_by_cv[cv_id] = neg_jobs
+
     cv_indices, pos_indices, neg_indices = [], [], []
     for cv_id, pos_jobs in pos_by_cv.items():
         cv_idx = cv_id_to_idx[cv_id]
-        negatives = neg_by_cv.get(cv_id, [])
+        hard_negs = hard_neg_by_cv.get(cv_id, [])
+        easy_negs = easy_neg_by_cv.get(cv_id, [])
+        all_negs = hard_negs + easy_negs
+
         for pos_job in pos_jobs:
-            if negatives:
-                neg_job = negatives[rng.randint(0, len(negatives))]
+            # Prefer hard negatives with probability hard_neg_ratio
+            if hard_negs and rng.random() < hard_neg_ratio:
+                neg_job = hard_negs[rng.randint(0, len(hard_negs))]
+            elif all_negs:
+                neg_job = all_negs[rng.randint(0, len(all_negs))]
             else:
                 neg_job = rng.randint(0, num_jobs)
+
             cv_indices.append(cv_idx)
             pos_indices.append(pos_job)
             neg_indices.append(neg_job)
@@ -154,7 +203,8 @@ class Trainer:
             # --- Train ---
             model.train()
             cv_idx, pos_idx, neg_idx = _sample_bpr_pairs(
-                dataset.train, rng, cv_id_to_idx, job_id_to_idx, len(jobs)
+                dataset.train, rng, cv_id_to_idx, job_id_to_idx, len(jobs),
+                cvs=cvs, jobs=jobs,
             )
             if len(cv_idx) == 0:
                 logger.warning("No BPR pairs sampled for epoch %d", epoch)
