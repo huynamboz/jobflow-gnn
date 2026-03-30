@@ -753,6 +753,344 @@
       "canonical": "remix",
       "category": 2,
       "aliases": ["Remix", "remix", "Remix.run"]
+    },
+
+    "elixir": {
+      "canonical": "elixir",
+      "category": 0,
+      "aliases": ["Elixir", "elixir", "Phoenix"]
+    },
+    "groovy": {
+      "canonical": "groovy",
+      "category": 0,
+      "aliases": ["Groovy", "groovy"]
+    },
+    "julia": {
+      "canonical": "julia",
+      "category": 0,
+      "aliases": ["Julia", "julia"]
+    },
+
+    "svelte": {
+      "canonical": "svelte",
+      "category": 2,
+      "aliases": ["Svelte", "svelte", "SvelteKit"]
+    },
+    "jquery": {
+      "canonical": "jquery",
+      "category": 2,
+      "aliases": ["jQuery", "jquery", "JQuery"]
+    },
+    "material_ui": {
+      "canonical": "material_ui",
+      "category": 2,
+      "aliases": ["Material UI", "MUI", "Material Design", "material-ui"]
+    },
+    "ant_design": {
+      "canonical": "ant_design",
+      "category": 2,
+      "aliases": ["Ant Design", "AntD", "antd", "Ant Design Pro"]
+    },
+    "storybook": {
+      "canonical": "storybook",
+      "category": 2,
+      "aliases": ["Storybook", "storybook"]
+    },
+
+    "prisma": {
+      "canonical": "prisma",
+      "category": 2,
+      "aliases": ["Prisma", "prisma", "Prisma ORM"]
+    },
+    "typeorm": {
+      "canonical": "typeorm",
+      "category": 2,
+      "aliases": ["TypeORM", "typeorm"]
+    },
+    "sequelize": {
+      "canonical": "sequelize",
+      "category": 2,
+      "aliases": ["Sequelize", "sequelize"]
+    },
+    "sqlalchemy": {
+      "canonical": "sqlalchemy",
+      "category": 2,
+      "aliases": ["SQLAlchemy", "sqlalchemy", "SQL Alchemy"]
+    },
+    "hibernate": {
+      "canonical": "hibernate",
+      "category": 2,
+      "aliases": ["Hibernate", "hibernate", "JPA", "Java Persistence"]
+    },
+
+    "aws_s3": {
+      "canonical": "aws_s3",
+      "category": 2,
+      "aliases": ["S3", "AWS S3", "Amazon S3"]
+    },
+    "aws_ec2": {
+      "canonical": "aws_ec2",
+      "category": 2,
+      "aliases": ["EC2", "AWS EC2", "Amazon EC2"]
+    },
+    "aws_ecs": {
+      "canonical": "aws_ecs",
+      "category": 2,
+      "aliases": ["ECS", "AWS ECS", "Amazon ECS"]
+    },
+    "aws_eks": {
+      "canonical": "aws_eks",
+      "category": 2,
+      "aliases": ["EKS", "AWS EKS", "Amazon EKS"]
+    },
+    "cloudformation": {
+      "canonical": "cloudformation",
+      "category": 2,
+      "aliases": ["CloudFormation", "AWS CloudFormation", "CFN", "CDK", "AWS CDK"]
+    },
+    "aws_lambda": {
+      "canonical": "aws_lambda",
+      "category": 2,
+      "aliases": ["Lambda", "AWS Lambda"]
+    },
+    "aws_sqs": {
+      "canonical": "aws_sqs",
+      "category": 2,
+      "aliases": ["SQS", "AWS SQS", "Amazon SQS"]
+    },
+    "aws_kinesis": {
+      "canonical": "aws_kinesis",
+      "category": 2,
+      "aliases": ["Kinesis", "AWS Kinesis", "Amazon Kinesis"]
+    },
+    "aws_redshift": {
+      "canonical": "aws_redshift",
+      "category": 2,
+      "aliases": ["Redshift", "AWS Redshift", "Amazon Redshift"]
+    },
+    "aws_glue": {
+      "canonical": "aws_glue",
+      "category": 2,
+      "aliases": ["Glue", "AWS Glue"]
+    },
+    "aws_emr": {
+      "canonical": "aws_emr",
+      "category": 2,
+      "aliases": ["EMR", "AWS EMR", "Amazon EMR"]
+    },
+    "aws_cloudwatch": {
+      "canonical": "aws_cloudwatch",
+      "category": 2,
+      "aliases": ["CloudWatch", "AWS CloudWatch"]
+    },
+    "aws_bedrock": {
+      "canonical": "aws_bedrock",
+      "category": 2,
+      "aliases": ["Bedrock", "AWS Bedrock", "Amazon Bedrock"]
+    },
+    "api_gateway": {
+      "canonical": "api_gateway",
+      "category": 2,
+      "aliases": ["API Gateway", "AWS API Gateway", "Amazon API Gateway"]
+    },
+
+    "circleci": {
+      "canonical": "circleci",
+      "category": 2,
+      "aliases": ["CircleCI", "circleci", "Circle CI"]
+    },
+    "gitlab_ci": {
+      "canonical": "gitlab_ci",
+      "category": 2,
+      "aliases": ["GitLab CI", "GitLab CI/CD", "gitlab-ci"]
+    },
+    "consul": {
+      "canonical": "consul",
+      "category": 2,
+      "aliases": ["Consul", "HashiCorp Consul", "consul"]
+    },
+    "vault_tool": {
+      "canonical": "vault_tool",
+      "category": 2,
+      "aliases": ["Vault", "HashiCorp Vault", "vault"]
+    },
+    "istio": {
+      "canonical": "istio",
+      "category": 2,
+      "aliases": ["Istio", "istio"]
+    },
+
+    "postman": {
+      "canonical": "postman",
+      "category": 2,
+      "aliases": ["Postman", "postman"]
+    },
+    "jest": {
+      "canonical": "jest",
+      "category": 2,
+      "aliases": ["Jest", "jest"]
+    },
+    "vitest": {
+      "canonical": "vitest",
+      "category": 2,
+      "aliases": ["Vitest", "vitest"]
+    },
+    "mockito": {
+      "canonical": "mockito",
+      "category": 2,
+      "aliases": ["Mockito", "mockito"]
+    },
+    "jmeter": {
+      "canonical": "jmeter",
+      "category": 2,
+      "aliases": ["JMeter", "jmeter", "Apache JMeter"]
+    },
+    "appium": {
+      "canonical": "appium",
+      "category": 2,
+      "aliases": ["Appium", "appium"]
+    },
+
+    "keras": {
+      "canonical": "keras",
+      "category": 2,
+      "aliases": ["Keras", "keras"]
+    },
+    "huggingface": {
+      "canonical": "huggingface",
+      "category": 2,
+      "aliases": ["Hugging Face", "HuggingFace", "huggingface", "Transformers"]
+    },
+    "kubeflow": {
+      "canonical": "kubeflow",
+      "category": 2,
+      "aliases": ["Kubeflow", "kubeflow"]
+    },
+    "vertex_ai": {
+      "canonical": "vertex_ai",
+      "category": 2,
+      "aliases": ["Vertex AI", "Google Vertex AI", "vertex"]
+    },
+
+    "opentelemetry": {
+      "canonical": "opentelemetry",
+      "category": 2,
+      "aliases": ["OpenTelemetry", "OTEL", "opentelemetry"]
+    },
+    "sentry": {
+      "canonical": "sentry",
+      "category": 2,
+      "aliases": ["Sentry", "sentry"]
+    },
+    "pagerduty": {
+      "canonical": "pagerduty",
+      "category": 2,
+      "aliases": ["PagerDuty", "pagerduty"]
+    },
+
+    "memcached": {
+      "canonical": "memcached",
+      "category": 2,
+      "aliases": ["Memcached", "memcached"]
+    },
+    "celery": {
+      "canonical": "celery",
+      "category": 2,
+      "aliases": ["Celery", "celery"]
+    },
+    "nats": {
+      "canonical": "nats",
+      "category": 2,
+      "aliases": ["NATS", "nats"]
+    },
+
+    "webrtc": {
+      "canonical": "webrtc",
+      "category": 3,
+      "aliases": ["WebRTC", "webrtc"]
+    },
+    "mqtt": {
+      "canonical": "mqtt",
+      "category": 3,
+      "aliases": ["MQTT", "mqtt"]
+    },
+    "socket_io": {
+      "canonical": "socket_io",
+      "category": 2,
+      "aliases": ["Socket.IO", "socket.io", "SocketIO"]
+    },
+
+    "event_driven": {
+      "canonical": "event_driven",
+      "category": 3,
+      "aliases": ["Event Driven", "event-driven", "Event-Driven Architecture", "EDA"]
+    },
+    "cqrs": {
+      "canonical": "cqrs",
+      "category": 3,
+      "aliases": ["CQRS", "cqrs", "Command Query Responsibility Segregation"]
+    },
+    "ddd": {
+      "canonical": "ddd",
+      "category": 3,
+      "aliases": ["Domain Driven Design", "DDD", "Domain-Driven Design"]
+    },
+    "clean_architecture": {
+      "canonical": "clean_architecture",
+      "category": 3,
+      "aliases": ["Clean Architecture", "clean architecture", "Hexagonal Architecture", "Onion Architecture"]
+    },
+
+    "vercel": {
+      "canonical": "vercel",
+      "category": 2,
+      "aliases": ["Vercel", "vercel"]
+    },
+    "heroku": {
+      "canonical": "heroku",
+      "category": 2,
+      "aliases": ["Heroku", "heroku"]
+    },
+    "cloudflare": {
+      "canonical": "cloudflare",
+      "category": 2,
+      "aliases": ["Cloudflare", "cloudflare", "Cloudflare Workers"]
+    },
+    "stripe": {
+      "canonical": "stripe",
+      "category": 2,
+      "aliases": ["Stripe", "stripe", "Stripe API"]
+    },
+    "twilio": {
+      "canonical": "twilio",
+      "category": 2,
+      "aliases": ["Twilio", "twilio"]
+    },
+    "oauth2": {
+      "canonical": "oauth2",
+      "category": 3,
+      "aliases": ["OAuth2", "OAuth 2.0", "OIDC", "OpenID Connect"]
+    },
+    "keycloak": {
+      "canonical": "keycloak",
+      "category": 2,
+      "aliases": ["Keycloak", "keycloak"]
+    },
+
+    "trpc": {
+      "canonical": "trpc",
+      "category": 2,
+      "aliases": ["tRPC", "trpc"]
+    },
+    "supabase": {
+      "canonical": "supabase",
+      "category": 2,
+      "aliases": ["Supabase", "supabase"]
+    },
+    "metabase": {
+      "canonical": "metabase",
+      "category": 2,
+      "aliases": ["Metabase", "metabase"]
     }
   }
 }
