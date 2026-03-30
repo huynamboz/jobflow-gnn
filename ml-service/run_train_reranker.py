@@ -99,8 +99,32 @@ def main() -> None:
     # Feature importance
     importance = engine.reranker.feature_importance()
     logger.info("Feature importance:")
-    for name, imp in sorted(importance.items(), key=lambda x: -x[1]):
+    for name, imp in sorted(importance.items(), key=lambda x: -x[1])[:10]:
         logger.info("  %-30s %.4f", name, imp)
+
+    # --- Calibration: fit Platt scaling on validation scores ---
+    logger.info("Fitting score calibration...")
+    val_scores = []
+    val_labels = []
+    # Use a subset for calibration (score each pair with stage1)
+    from ml_service.data.labeler import PairLabeler as _PL
+    cal_labeler = _PL(seed=99)
+    cal_pairs = cal_labeler.create_pairs(cvs, jobs, num_positive=500, use_skill_relations=True)
+    # Balance: equal positive and negative for calibration
+    pos_pairs = [p for p in cal_pairs if p.label == 1]
+    neg_pairs = [p for p in cal_pairs if p.label == 0]
+    n_cal = min(len(pos_pairs), len(neg_pairs))
+    balanced_pairs = pos_pairs[:n_cal] + neg_pairs[:n_cal]
+    for p in balanced_pairs:
+        ci = cv_id_to_idx.get(p.cv_id)
+        ji = job_id_to_idx.get(p.job_id)
+        if ci is not None and ji is not None:
+            score = engine._score_pair(cvs[ci], jobs[ji])
+            val_scores.append(score)
+            val_labels.append(p.label)
+
+    engine.calibrate(val_scores, val_labels)
+    logger.info("Calibration fitted on %d samples", len(val_scores))
 
     total = time.time() - t_start
     logger.info("Done in %.1fs", total)

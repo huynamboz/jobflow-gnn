@@ -33,6 +33,12 @@ class FeatureExtractor:
         "cv_skill_count",
         "skill_specificity",
         "tool_ratio",
+        # Stage 1 + GNN signals
+        "stage1_score",
+        "gnn_score",
+        "gnn_rank",
+        "must_have_cap_triggered",
+        "edge_case_penalty_triggered",
     ]
 
     def __init__(
@@ -44,6 +50,20 @@ class FeatureExtractor:
         self._embed = embedding_provider
         self._skill_sim = skill_similarity or {}
         self._skill_cats = skill_categories or {}
+        # Injected at inference time by engine
+        self._stage1_scores: dict[int, float] = {}  # job_idx → score
+        self._stage1_ranks: dict[int, int] = {}  # job_idx → rank
+
+    def set_stage1_context(
+        self, scores: list[tuple[int, float]],
+    ) -> None:
+        """Inject Stage 1 scores/ranks for current query.
+
+        Called by InferenceEngine before extract_batch.
+        """
+        self._stage1_scores = {idx: s for idx, s in scores}
+        sorted_by_score = sorted(scores, key=lambda x: -x[1])
+        self._stage1_ranks = {idx: rank for rank, (idx, _) in enumerate(sorted_by_score)}
 
     def extract(self, cv: CVData, job: JobData) -> np.ndarray:
         """Extract feature vector for a single (CV, Job) pair."""
@@ -100,6 +120,25 @@ class FeatureExtractor:
         # 15. Tool ratio (what % of CV skills are tools vs technical)
         tool_ratio = self._tool_ratio(cv_set)
 
+        # 16-17. Stage 1 + GNN signals
+        stage1_score = self._stage1_scores.get(job.job_id, 0.5)
+        gnn_rank = float(self._stage1_ranks.get(job.job_id, 50)) / 50.0  # normalize 0-1
+
+        # 18. Must-have cap triggered (binary)
+        must_have_triggered = 1.0 if missing_req >= 2 else (0.5 if missing_req == 1 else 0.0)
+
+        # 19. Edge case penalty triggered (binary)
+        edge_penalty = 0.0
+        if len(cv_set) < 4:
+            edge_penalty = 1.0
+        cv_level = int(cv.seniority)
+        job_level = int(job.seniority)
+        if cv_level >= 3 and job_level <= 1:
+            edge_penalty = 1.0
+        _TOOL_SKILLS = {"git", "jira", "confluence", "docker", "jenkins", "ci_cd", "npm", "vite", "webpack"}
+        if intersection and len(intersection - _TOOL_SKILLS) == 0:
+            edge_penalty = 1.0
+
         return np.array([
             text_sim, jaccard, weighted, semantic,
             missing_req, missing_ratio,
@@ -107,6 +146,8 @@ class FeatureExtractor:
             sen_dist, sen_score,
             role_pen, exp_years, cv_skill_count,
             specificity, tool_ratio,
+            stage1_score, text_sim,  # gnn_score ≈ text_sim in current impl
+            gnn_rank, must_have_triggered, edge_penalty,
         ], dtype=np.float32)
 
     def extract_batch(
@@ -179,6 +220,20 @@ class FeatureExtractor:
         cv_role = infer_role(cv.skills, cv.text)
         job_role = infer_role(job.skills, job.text)
         role_pen = role_match_penalty(cv_role, job_role)
+        tool_ratio = self._tool_ratio(cv_set)
+
+        # 16-20. Stage 1 + GNN + penalty signals
+        stage1_score = self._stage1_scores.get(job.job_id, 0.5)
+        gnn_rank = float(self._stage1_ranks.get(job.job_id, 50)) / 50.0
+        must_have_triggered = 1.0 if missing_req >= 2 else (0.5 if missing_req == 1 else 0.0)
+        edge_penalty = 0.0
+        if len(cv_set) < 4:
+            edge_penalty = 1.0
+        if int(cv.seniority) >= 3 and int(job.seniority) <= 1:
+            edge_penalty = 1.0
+        _TOOL_SKILLS = {"git", "jira", "confluence", "docker", "jenkins", "ci_cd", "npm", "vite", "webpack"}
+        if intersection and len(intersection - _TOOL_SKILLS) == 0:
+            edge_penalty = 1.0
 
         return np.array([
             text_sim, jaccard, weighted, semantic,
@@ -186,7 +241,9 @@ class FeatureExtractor:
             matched_count, total_job_skills,
             sen_dist, sen_score,
             role_pen, cv.experience_years, len(cv_set),
-            self._skill_specificity(cv_set), self._tool_ratio(cv_set),
+            self._skill_specificity(cv_set), tool_ratio,
+            stage1_score, text_sim,
+            gnn_rank, must_have_triggered, edge_penalty,
         ], dtype=np.float32)
 
     def _text_similarity(self, cv: CVData, job: JobData) -> float:

@@ -14,6 +14,83 @@ base_score = α × text_similarity
 
 ---
 
+## Cơ sở thiết kế công thức
+
+### Tại sao hybrid scoring thay vì 1 model duy nhất?
+
+Production job matching systems (LinkedIn LinkSAGE — KDD 2025, WHIN+CSAGNN — 2024) không bao giờ dùng 1 model duy nhất để quyết định matching. Lý do:
+
+- **GNN/text embedding** tốt ở semantic understanding nhưng dễ match sai role (CV "Python developer" match JD "Data Scientist" vì text gần nhau)
+- **Skill overlap** tốt ở exact matching nhưng miss related skills (Flask developer không match Django job dù cùng Python web framework)
+- **Seniority/role** là hard constraints mà ML model thường bỏ qua
+
+→ Kết hợp 3 signals cho kết quả robust hơn bất kỳ component nào đứng riêng.
+
+### Tại sao α=0.55, β=0.30, γ=0.15?
+
+Weights được xác định qua **3 vòng thực nghiệm iterative**, không phải chọn ngẫu nhiên:
+
+| Version | α (text) | β (skill) | γ (seniority) | Vấn đề phát hiện |
+|---------|----------|-----------|---------------|------------------|
+| v1 | 0.85 | 0.10 | 0.05 | Text dominate → AI jobs lọt top cho Frontend CV |
+| v2 | 0.80 | 0.15 | 0.05 | Vẫn text quá mạnh, skill matching yếu |
+| **v3** | **0.55** | **0.30** | **0.15** | **Cân bằng — AI jobs biến mất, đúng role** |
+
+**Validation từ trained MLP reranker:**
+
+Khi train MLP reranker trên 20 features (5.300 labeled pairs), feature importance cho thấy:
+```
+role_penalty:     0.132  ← quan trọng nhất
+gnn_rank:         0.127
+stage1_score:     0.117
+text_similarity:  0.115  ← chỉ #4, không phải #1
+skill_weighted:   0.113
+```
+
+Text similarity chỉ đứng #4 trong feature importance → xác nhận rằng α=0.55 (giảm từ 0.85) là hướng đúng. Skill matching và role compatibility quan trọng hơn text similarity trong bài toán job matching.
+
+### Tại sao role penalty = 0.7?
+
+- Frontend CV match Frontend JD → penalty 1.0 (không giảm)
+- Frontend CV match AI Security JD → penalty 0.7 (giảm 30%)
+- Giảm 30% đủ để đẩy cross-role matches từ eligible (>0.65) xuống dưới threshold
+
+Ví dụ: base_score = 0.75 (cao vì text gần nhau)
+- Cùng role: 0.75 × 1.0 = 0.75 → eligible ✅
+- Khác role: 0.75 × 0.7 = 0.525 → not eligible ❌
+
+### Tại sao must-have cap = 0.55/0.70?
+
+Logic nghiệp vụ: nếu JD yêu cầu Django (required, importance=5) mà CV không có Django → dù text similarity cao, CV không nên eligible.
+
+- Thiếu 1 required skill → cap 0.70 (vẫn có thể eligible nếu mọi thứ khác tốt)
+- Thiếu 2+ required skills → cap 0.55 (gần như chắc chắn not eligible)
+
+### Tại sao Platt calibration trên balanced data?
+
+Raw score 0.7 không có meaning — không nghĩa là "70% xác suất match". Platt scaling fit sigmoid trên validation data:
+
+```
+P(match) = sigmoid(0.865 × score - 0.379)
+```
+
+- Fit trên **balanced data** (500 positive + 500 negative) thay vì full data (75% negative)
+- Lần đầu fit imbalanced → sigmoid bias → tất cả eligible=false → fix bằng balanced data
+- Threshold 0.5 trên calibrated probability có meaning: "50% xác suất match trở lên"
+
+### Tóm tắt nguồn gốc
+
+| Thành phần | Nguồn gốc |
+|-----------|-----------|
+| Hybrid scoring (multi-signal) | Research: LinkSAGE, WHIN+CSAGNN |
+| α, β, γ weights | Iterative experimentation (3 versions, test CV thật) |
+| Role penalty, must-have cap | Failure case analysis (AI job cho Frontend CV) |
+| Edge case penalties | Testing: generic CV, overqualified, tool-only match |
+| Calibration | Statistical method (Platt scaling) trên validation set |
+| Feature importance validation | MLP reranker trained trên 5.300 labeled pairs |
+
+---
+
 ## 5 thành phần
 
 ### 1. Text Similarity (α = 0.55)

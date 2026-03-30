@@ -29,6 +29,8 @@ class GraphBuilder:
     def build(
         self,
         cvs: list[CVData],
+        # Note: skill graph (relates_to, similar_to) is built from ALL data passed here.
+        # For proper train/test separation, pass only training CVs/jobs.
         jobs: list[JobData],
         skill_catalog: dict[str, SkillCategory],
         pairs: list[LabeledPair],

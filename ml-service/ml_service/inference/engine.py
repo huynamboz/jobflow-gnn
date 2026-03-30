@@ -25,6 +25,7 @@ from ml_service.graph.schema import CVData, JobData, SeniorityLevel
 from ml_service.inference.checkpoint import load_checkpoint
 from ml_service.inference.role_classifier import infer_role, role_match_penalty
 from ml_service.models.gnn import HeteroGraphSAGE, prepare_data_for_gnn
+from ml_service.reranker.calibration import PlattCalibrator
 from ml_service.reranker.features import FeatureExtractor
 from ml_service.reranker.ranker import Reranker
 
@@ -106,10 +107,15 @@ class InferenceEngine:
         )
         self._reranker = Reranker(self._feature_extractor)
 
-        # Try loading saved reranker
+        # Score calibration (Platt scaling)
+        self._calibrator = PlattCalibrator()
+
+        # Try loading saved reranker + calibration
         ckpt = Path("checkpoints/latest")
         if (ckpt / "reranker.pt").exists():
             self._reranker.load(ckpt)
+        if (ckpt / "calibration.json").exists():
+            self._calibrator.load(ckpt)
 
         logger.info(
             "InferenceEngine ready: %d CVs, %d jobs, %d skill-pairs, reranker=%s",
@@ -222,11 +228,13 @@ class InferenceEngine:
         candidates = stage1_scores[:retrieve_n]
 
         # --- Stage 2: Rerank determines ORDER, Stage 1 keeps SCORE ---
-        # Reranker only changes ranking, not the score itself.
-        # Stage 1 score = display score + eligibility check.
         if self._reranker.is_trained:
             cand_indices = [idx for idx, _ in candidates]
             stage1_score_map = {idx: s for idx, s in candidates}
+            # Inject stage1 context (scores + ranks) into feature extractor
+            self._feature_extractor.set_stage1_context(
+                [(self._jobs[idx].job_id, s) for idx, s in candidates]
+            )
             rerank_probs = self._reranker.score_batch(
                 [cv] * len(cand_indices),
                 self._jobs,
@@ -242,18 +250,24 @@ class InferenceEngine:
         else:
             scored = candidates
 
-        # --- Build results ---
+        # --- Build results (with calibrated scores) ---
         results: list[JobMatchResult] = []
-        for job_idx, score in scored[:top_k]:
+        for job_idx, raw_score in scored[:top_k]:
             job = self._jobs[job_idx]
             job_skills = set(job.skills)
             title = job.text.split(".")[0] if job.text else ""
 
+            # Display score = raw Stage 1 score (interpretable)
+            # Calibrated score = used only for eligibility check
+            display_score = float(raw_score)
+            calibrated = self._calibrator.transform_single(display_score)
+            eligible = calibrated >= 0.5 if self._calibrator.is_fitted else display_score >= self._threshold
+
             results.append(
                 JobMatchResult(
                     job_id=job.job_id,
-                    score=round(float(score), 4),
-                    eligible=float(score) >= self._threshold,
+                    score=round(display_score, 4),
+                    eligible=eligible,
                     matched_skills=tuple(sorted(cv_skills & job_skills)),
                     missing_skills=tuple(sorted(job_skills - cv_skills)),
                     seniority_match=abs(int(cv.seniority) - int(job.seniority)) <= 1,
@@ -275,6 +289,14 @@ class InferenceEngine:
             return []
 
         return self.match_cv(cv, top_k=top_k)
+
+    def calibrate(
+        self, scores: list[float], labels: list[int],
+    ) -> None:
+        """Fit Platt calibration on validation scores + labels."""
+        self._calibrator.fit(np.array(scores), np.array(labels))
+        if self._calibrator.is_fitted:
+            self._calibrator.save(Path("checkpoints/latest"))
 
     def train_reranker(
         self,

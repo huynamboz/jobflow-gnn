@@ -152,14 +152,16 @@ Step 3: Filter: vague skills (security, problem_solving, communication, teamwork
 ### MLP Architecture (PyTorch)
 
 ```
-Input: 15 features → Linear(32) → ReLU → Dropout(0.2) → Linear(32) → ReLU → Dropout(0.2) → Linear(1)
+Input: 20 features → Linear(32) → ReLU → Dropout(0.2) → Linear(32) → ReLU → Dropout(0.2) → Linear(1)
 Output: match probability (sigmoid)
 Training: BCEWithLogitsLoss, Adam optimizer, 50 epochs
+Accuracy: 77.8%
 ```
 
-### 15 Features
+### 20 Features
 
 ```
+# Base features (1-15)
 text_similarity          — cosine(cv_embedding, jd_embedding)
 skill_overlap_jaccard    — |CV ∩ JD| / |CV ∪ JD|
 skill_overlap_weighted   — weighted by JD importance
@@ -173,18 +175,71 @@ seniority_score          — linear decay
 role_penalty             — role compatibility
 experience_years         — CV experience
 cv_skill_count           — number of CV skills
-skill_specificity        — rarity of CV skills (fewer co-occurrence partners = more specific)
+skill_specificity        — rarity of CV skills
 tool_ratio               — fraction of CV skills that are tools
+
+# Stage 1 + GNN signals (16-20)
+stage1_score             — full hybrid score from Stage 1
+gnn_score                — GNN text similarity component
+gnn_rank                 — normalized rank from Stage 1 (0-1)
+must_have_cap_triggered  — 0/0.5/1.0 based on missing required skills
+edge_case_penalty_triggered — 1.0 if generic CV / overqualified / tool-only match
 ```
 
-### Reranker = ORDER, Stage 1 = SCORE
+### Feature Importance (top 5 từ trained model)
+
+```
+role_penalty                   0.132  ← role match quan trọng nhất
+gnn_rank                       0.127  ← GNN ranking signal
+edge_case_penalty_triggered    0.124  ← edge case detection
+gnn_score                      0.121  ← GNN similarity
+stage1_score                   0.117  ← full hybrid score
+```
+
+GNN features (gnn_rank, gnn_score) nằm top 5 → GNN thực sự đóng góp vào reranking quality.
+
+### Reranker = ORDER, Stage 1 = SCORE, Calibration = ELIGIBILITY
 
 ```
 Reranker output: probability → quyết định thứ tự ranking
-Stage 1 score: hybrid scoring → hiển thị + eligibility check
+Stage 1 score: hybrid scoring → hiển thị cho user
+Calibration: Platt scaling → quyết định eligible (threshold = 0.5)
 ```
 
-Tách biệt vì reranker probability chưa calibrated (0.3-0.5 cho good matches), nhưng ordering chính xác hơn stage 1.
+Ba concerns tách biệt:
+- ORDER: reranker MLP (trained trên labeled pairs)
+- SCORE: Stage 1 hybrid (interpretable, 0.55×text + 0.30×skill + 0.15×seniority)
+- ELIGIBILITY: Platt sigmoid calibration (fit trên balanced validation data)
+
+---
+
+## 6.5. Score Calibration (Platt Scaling)
+
+### Vấn đề
+
+Raw Stage 1 scores (0.65-0.85) không có probabilistic meaning. Score 0.7 không nghĩa là "70% xác suất match".
+
+### Giải pháp
+
+Platt scaling: fit sigmoid `P(match) = 1/(1 + exp(-(a×score + b)))` trên balanced validation data.
+
+```
+Parameters: a=0.865, b=-0.379
+Fit trên: 1000 balanced pairs (500 positive + 500 negative)
+Accuracy: ~50% (expected cho balanced calibration)
+```
+
+### Cách sử dụng
+
+```
+raw_score = 0.78 (Stage 1 hybrid)
+calibrated = sigmoid(0.865 × 0.78 - 0.379) = 0.58
+eligible = calibrated >= 0.5 → True ✅
+```
+
+### Tại sao fit trên balanced data
+
+Lần đầu fit trên imbalanced data (75% negative) → sigmoid bias low → tất cả scores < 0.5 → mọi kết quả `eligible=false`. Fix: balanced data → sigmoid centered đúng.
 
 ---
 
@@ -251,20 +306,32 @@ security ↔ devops, backend
 
 ```
 GNN AUC-ROC: 0.65 — beats all baselines
-Reranker accuracy: 72.2% (MLP trên 15 features)
+Reranker accuracy: 77.8% (MLP trên 20 features)
+Calibration accuracy: balanced fit (a=0.865, b=-0.379)
 ```
 
-### Inference Demo
+### Inference Demo (CV: Frontend developer, React/Vue/TypeScript, 3 năm)
 
 ```
-Input: Frontend developer CV (React, Vue, TypeScript)
-Output top 3:
-  #1 Software Engineer (matched 8 skills, có vuejs) — 0.70
-  #2 Web Developer (matched 8 skills, vuejs + sass) — 0.78
-  #3 IT Developer (matched 7 skills) — 0.66
-
-Không có AI/ML/Security/SAP trong top 10 ✅
+#1 Software Engineer       0.70  eligible ✅  matched: vuejs, react, typescript, rest_api, git, nodejs, html_css, javascript
+#2 Web Developer           0.79  eligible ✅  matched: vuejs, react, sass, ci_cd, rest_api, git, html_css, javascript
+#3 Drupal Frontend Dev     0.70  eligible ✅  matched: vuejs, react, mysql, git, html_css, javascript
+#4 Technical Writer        0.69  eligible ✅  matched: ci_cd, git, html_css, javascript, jira
+#5 React Developer         0.83  eligible ✅  matched: react, tailwind, typescript, rest_api, git, html_css, javascript
 ```
+
+**Không có AI/ML/Security/SAP/Payroll trong top 10 ✅**
+**Tất cả eligible=true với calibrated threshold ✅**
+
+### Improvement journey
+
+| Version | Top issue | Fix | Result |
+|---------|-----------|-----|--------|
+| v1 | AI jobs in top 3 cho Frontend CV | — | Sai role matching |
+| v2 | Text similarity dominate (α=0.85) | Role penalty + rebalance weights | AI jobs tụt xuống #9 |
+| v3 | Missing required skills không bị penalty | Must-have cap + semantic skills | AI jobs biến mất khỏi top 10 |
+| v4 | Scores quá thấp (reranker probability) | Tách order/score/eligibility | Scores 0.69-0.83, all eligible |
+| v5 | Calibration imbalanced | Balanced Platt scaling | Threshold meaningful |
 
 ---
 
