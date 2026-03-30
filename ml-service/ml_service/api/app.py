@@ -1,10 +1,12 @@
 """FastAPI application for JobFlow-GNN matching service.
 
 Endpoints:
-    POST /match/jd        — Input JD text → Top K CVs
-    POST /match/cv        — Input CV text → Top K Jobs
-    POST /match/cv/upload — Upload CV PDF/DOCX → Top K Jobs
-    GET  /health          — Service health + stats
+    POST /match/jd         — Input JD text → Top K CVs
+    POST /match/cv         — Input CV text → Top K Jobs
+    POST /match/cv/upload  — Upload CV PDF/DOCX → Top K Jobs
+    POST /parse/cv         — Input CV text → parsed structured data (debug)
+    POST /parse/cv/upload  — Upload CV PDF/DOCX → parsed structured data (debug)
+    GET  /health           — Service health + stats
 """
 
 from __future__ import annotations
@@ -67,6 +69,14 @@ class JobMatchResponse(BaseModel):
     missing_skills: list[str]
     seniority_match: bool
     title: str
+
+
+class CVParseResponse(BaseModel):
+    seniority: str
+    experience_years: float
+    education: str
+    skills: list[str]
+    text_preview: str
 
 
 class HealthResponse(BaseModel):
@@ -191,3 +201,48 @@ async def match_cv_upload(file: UploadFile = File(...), top_k: int = 10):
         )
         for r in results
     ]
+
+
+@app.post("/parse/cv", response_model=CVParseResponse)
+async def parse_cv_text(req: CVMatchRequest):
+    """Parse CV text → structured data (debug endpoint)."""
+    if not _parser:
+        raise HTTPException(503, "Parser not loaded")
+
+    cv = _parser.parse_text(req.text)
+    return CVParseResponse(
+        seniority=cv.seniority.name,
+        experience_years=cv.experience_years,
+        education=cv.education.name,
+        skills=list(cv.skills),
+        text_preview=cv.text[:500],
+    )
+
+
+@app.post("/parse/cv/upload", response_model=CVParseResponse)
+async def parse_cv_upload(file: UploadFile = File(...)):
+    """Upload CV (PDF/DOCX) → structured data (debug endpoint)."""
+    if not _parser:
+        raise HTTPException(503, "Parser not loaded")
+
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in (".pdf", ".docx", ".txt"):
+        raise HTTPException(400, f"Unsupported file type: {suffix}. Use .pdf, .docx, or .txt")
+
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+
+    try:
+        cv = _parser.parse_file(tmp_path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    return CVParseResponse(
+        seniority=cv.seniority.name,
+        experience_years=cv.experience_years,
+        education=cv.education.name,
+        skills=list(cv.skills),
+        text_preview=cv.text[:500],
+    )

@@ -99,10 +99,15 @@
       "category": 2,
       "aliases": ["Next.js", "NextJS", "next.js", "Next JS"]
     },
+    "nuxtjs": {
+      "canonical": "nuxtjs",
+      "category": 2,
+      "aliases": ["Nuxt", "NuxtJS", "Nuxt.js", "nuxt.js", "Nuxt 3", "NuxtJs"]
+    },
     "vuejs": {
       "canonical": "vuejs",
       "category": 2,
-      "aliases": ["Vue", "Vue.js", "VueJS", "Vue JS", "vue.js"]
+      "aliases": ["Vue", "Vue.js", "VueJS", "Vue JS", "vue.js", "VueJs"]
     },
     "angular": {
       "canonical": "angular",
@@ -738,6 +743,16 @@
       "canonical": "solidity",
       "category": 0,
       "aliases": ["Solidity", "solidity"]
+    },
+    "pinia": {
+      "canonical": "pinia",
+      "category": 2,
+      "aliases": ["Pinia", "pinia"]
+    },
+    "remix": {
+      "canonical": "remix",
+      "category": 2,
+      "aliases": ["Remix", "remix", "Remix.run"]
     }
   }
 }

@@ -75,7 +75,9 @@ class SkillExtractor:
         sal_min, sal_max = self._normalize_salary(
             raw.salary_min, raw.salary_max, raw.salary_currency
         )
-        importances = self._compute_importances(skills)
+        importances = self._compute_per_jd_importances(
+            skills, raw.title, raw.description
+        )
 
         return JobData(
             job_id=job_id,
@@ -91,29 +93,84 @@ class SkillExtractor:
         """Extract a batch of RawJobs, assigning sequential IDs."""
         return [self.extract(raw, start_id + i) for i, raw in enumerate(raws)]
 
-    def _compute_importances(self, skills: list[str]) -> tuple[int, ...]:
-        """Compute skill importance (1-5) using TF-IDF if fitted, else default 3."""
-        if not self._fitted or not self._idf:
-            return tuple(3 for _ in skills)
+    # Patterns to detect "required" vs "nice-to-have" sections
+    _REQUIRED_PATTERNS = re.compile(
+        r"\b(?:required|must have|requirements?|mandatory|essential|minimum)\b", re.I
+    )
+    _NICE_TO_HAVE_PATTERNS = re.compile(
+        r"\b(?:nice to have|preferred|bonus|plus|optional|desired|ideally)\b", re.I
+    )
 
+    def _compute_per_jd_importances(
+        self, skills: list[str], title: str, description: str,
+    ) -> tuple[int, ...]:
+        """Compute skill importance per-JD based on context position.
+
+        Priority:
+          5 — skill appears in job title
+          4 — skill in "required" / "must have" section
+          2 — skill in "nice to have" / "preferred" section
+          3 — skill in body (default)
+
+        Then boost with TF-IDF if fitted (±1 level).
+        """
         if not skills:
             return ()
 
-        # Raw IDF scores
-        raw_scores = [self._idf.get(s, 0.0) for s in skills]
-        min_s = min(raw_scores) if raw_scores else 0.0
-        max_s = max(raw_scores) if raw_scores else 0.0
+        # Find skills in title
+        title_skills = set(self._extract_skills(title))
 
-        # Normalize to 1-5
-        if max_s - min_s < 1e-8:
-            return tuple(3 for _ in skills)
+        # Split description into required vs nice-to-have zones
+        required_zone, nice_zone = self._split_zones(description)
+        required_skills = set(self._extract_skills(required_zone)) if required_zone else set()
+        nice_skills = set(self._extract_skills(nice_zone)) if nice_zone else set()
 
-        importances = []
-        for score in raw_scores:
-            normalized = (score - min_s) / (max_s - min_s)  # 0-1
-            level = int(normalized * 4) + 1  # 1-5
-            importances.append(min(level, 5))
+        importances: list[int] = []
+        for skill in skills:
+            if skill in title_skills:
+                base = 5
+            elif skill in required_skills:
+                base = 4
+            elif skill in nice_skills:
+                base = 2
+            else:
+                base = 3
+
+            # TF-IDF boost: rare skills +1, common skills -1
+            if self._fitted and self._idf:
+                idf = self._idf.get(skill, 0.0)
+                median_idf = sorted(self._idf.values())[len(self._idf) // 2] if self._idf else 0
+                if idf > median_idf * 1.3:
+                    base = min(base + 1, 5)
+                elif idf < median_idf * 0.7:
+                    base = max(base - 1, 1)
+
+            importances.append(base)
+
         return tuple(importances)
+
+    @staticmethod
+    def _split_zones(text: str) -> tuple[str, str]:
+        """Split JD text into required zone and nice-to-have zone.
+
+        Returns (required_text, nice_to_have_text). Either can be empty.
+        """
+        lines = text.split("\n")
+        required_lines: list[str] = []
+        nice_lines: list[str] = []
+        current = required_lines  # default: everything is "required"
+
+        req_pat = SkillExtractor._REQUIRED_PATTERNS
+        nice_pat = SkillExtractor._NICE_TO_HAVE_PATTERNS
+
+        for line in lines:
+            if nice_pat.search(line):
+                current = nice_lines
+            elif req_pat.search(line):
+                current = required_lines
+            current.append(line)
+
+        return "\n".join(required_lines), "\n".join(nice_lines)
 
     # ------------------------------------------------------------------
     # Skill extraction

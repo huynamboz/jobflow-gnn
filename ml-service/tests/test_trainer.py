@@ -18,11 +18,11 @@ def normalizer(skill_alias_path):
 def tiny_dataset(normalizer, fake_embed):
     """Generate a tiny dataset for integration testing."""
     gen = SyntheticDataGenerator(normalizer, seed=42)
-    cvs = gen.generate_cvs(10)
-    jobs = gen.generate_jobs(20)
+    cvs = gen.generate_cvs(30)
+    jobs = gen.generate_jobs(50)
 
     labeler = PairLabeler(seed=42)
-    pairs = labeler.create_pairs(cvs, jobs, num_positive=10)
+    pairs = labeler.create_pairs(cvs, jobs, num_positive=30)
     dataset = labeler.split(pairs)
 
     builder = GraphBuilder(fake_embed)
