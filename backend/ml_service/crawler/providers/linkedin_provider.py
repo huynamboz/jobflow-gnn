@@ -117,11 +117,20 @@ class LinkedInProvider(CrawlProvider):
     def _crawl_jobs(
         self, page, search_term: str, location: str, results_wanted: int,
     ) -> list[RawJob]:
-        """Crawl LinkedIn job listings with stream save."""
+        """Crawl LinkedIn job listings with stream save + cross-session dedup."""
         jobs: list[RawJob] = []
         seen_fps: set[str] = set()
         offset = 0
         page_num = 0
+
+        # Load existing fingerprints from file to avoid cross-session duplicates
+        if self._save_path:
+            from ml_service.crawler.storage import compute_fingerprint, load_raw_jobs
+            existing = load_raw_jobs(self._save_path)
+            for j in existing:
+                seen_fps.add(compute_fingerprint(j))
+            if seen_fps:
+                logger.info("Loaded %d existing fingerprints for dedup", len(seen_fps))
 
         while len(jobs) < results_wanted:
             page_num += 1
