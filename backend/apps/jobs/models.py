@@ -1,7 +1,65 @@
 from django.db import models
 
 
+class Platform(models.Model):
+    """Job platform: LinkedIn, Indeed, Adzuna, Remotive, etc."""
+
+    name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(max_length=100, unique=True)  # "linkedin", "indeed"
+    base_url = models.URLField(max_length=500, blank=True, default="")
+    logo_url = models.URLField(max_length=1000, blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "platforms"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Company(models.Model):
+    """Company that posts jobs. Can appear on multiple platforms."""
+
+    name = models.CharField(max_length=300, db_index=True)
+    logo_url = models.URLField(max_length=1000, blank=True, default="")
+    website_url = models.URLField(max_length=1000, blank=True, default="")
+    industry = models.CharField(max_length=200, blank=True, default="")
+    size = models.CharField(max_length=100, blank=True, default="")  # "11-50", "1000+"
+    location = models.CharField(max_length=300, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # M2M with Platform through CompanyPlatform
+    platforms = models.ManyToManyField(Platform, through="CompanyPlatform", blank=True)
+
+    class Meta:
+        db_table = "companies"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class CompanyPlatform(models.Model):
+    """Company presence on a specific platform (profile URL, etc.)."""
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="platform_profiles")
+    platform = models.ForeignKey(Platform, on_delete=models.CASCADE, related_name="company_profiles")
+    profile_url = models.URLField(max_length=1000, blank=True, default="")  # e.g. LinkedIn company page
+
+    class Meta:
+        db_table = "company_platforms"
+        unique_together = ("company", "platform")
+
+    def __str__(self):
+        return f"{self.company.name} @ {self.platform.name}"
+
+
 class Job(models.Model):
+    """Job posting from a specific platform."""
+
     class Seniority(models.IntegerChoices):
         INTERN = 0
         JUNIOR = 1
@@ -10,12 +68,25 @@ class Job(models.Model):
         LEAD = 4
         MANAGER = 5
 
+    class JobType(models.TextChoices):
+        FULL_TIME = "full-time"
+        PART_TIME = "part-time"
+        CONTRACT = "contract"
+        REMOTE = "remote"
+        HYBRID = "hybrid"
+        ON_SITE = "on-site"
+        OTHER = "other"
+
+    # Relations
+    platform = models.ForeignKey(Platform, on_delete=models.CASCADE, related_name="jobs", null=True, blank=True)
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="jobs", null=True, blank=True)
+
     # Core fields
     title = models.CharField(max_length=500)
-    company = models.CharField(max_length=300, blank=True, default="")
-    location = models.CharField(max_length=300, blank=True, default="")
     description = models.TextField()
+    location = models.CharField(max_length=300, blank=True, default="")
     seniority = models.IntegerField(choices=Seniority.choices, default=Seniority.MID)
+    job_type = models.CharField(max_length=20, choices=JobType.choices, default=JobType.OTHER, blank=True)
 
     # Salary
     salary_min = models.IntegerField(default=0)
@@ -23,12 +94,15 @@ class Job(models.Model):
     salary_currency = models.CharField(max_length=10, default="USD")
 
     # Source
-    source = models.CharField(max_length=50, blank=True, default="")  # indeed, adzuna, etc.
     source_url = models.URLField(max_length=1000, blank=True, default="")
-    fingerprint = models.CharField(max_length=32, unique=True, db_index=True, blank=True, default="")
+    fingerprint = models.CharField(max_length=32, db_index=True, blank=True, default="")
+    applicant_count = models.CharField(max_length=100, blank=True, default="")
 
     # Skills (M2M through JobSkill)
     skills = models.ManyToManyField("skills.Skill", through="JobSkill", blank=True)
+
+    # Status
+    is_active = models.BooleanField(default=True)
 
     # Timestamps
     date_posted = models.DateTimeField(null=True, blank=True)
@@ -38,14 +112,17 @@ class Job(models.Model):
     class Meta:
         db_table = "jobs"
         ordering = ["-created_at"]
+        # Dedup per platform (same fingerprint on same platform = duplicate)
+        unique_together = ("platform", "fingerprint")
 
     def __str__(self):
-        return f"{self.title} @ {self.company}"
+        company_name = self.company.name if self.company else "Unknown"
+        return f"{self.title} @ {company_name}"
 
 
 class JobSkill(models.Model):
     job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="job_skills")
-    skill = models.ForeignKey("skills.Skill", on_delete=models.CASCADE)
+    skill = models.ForeignKey("skills.Skill", on_delete=models.CASCADE, related_name="job_skills")
     importance = models.IntegerField(default=3)  # 1-5
 
     class Meta:

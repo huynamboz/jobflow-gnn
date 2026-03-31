@@ -34,3 +34,40 @@ class Feedback(models.Model):
     class Meta:
         db_table = "feedback"
         ordering = ["-created_at"]
+
+
+class TrainRun(models.Model):
+    """Track model training history."""
+
+    class Status(models.TextChoices):
+        RUNNING = "running"
+        COMPLETED = "completed"
+        FAILED = "failed"
+
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.RUNNING)
+    num_jobs = models.IntegerField(default=0)
+    num_cvs = models.IntegerField(default=0)
+    num_pairs = models.IntegerField(default=0)
+    num_skills = models.IntegerField(default=0)
+
+    # Metrics
+    auc_roc = models.FloatField(null=True, blank=True)
+    best_epoch = models.IntegerField(null=True, blank=True)
+    final_loss = models.FloatField(null=True, blank=True)
+    reranker_accuracy = models.FloatField(null=True, blank=True)
+    metrics_json = models.JSONField(default=dict, blank=True)
+
+    # Config
+    config_json = models.JSONField(default=dict, blank=True)
+    checkpoint_path = models.CharField(max_length=500, blank=True, default="")
+
+    # Timestamps
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "train_runs"
+        ordering = ["-started_at"]
+
+    def __str__(self):
+        return f"TrainRun #{self.pk} ({self.status}) AUC={self.auc_roc or 0:.3f}"
