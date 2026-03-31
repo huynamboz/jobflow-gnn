@@ -7,27 +7,41 @@
 ### Two-Stage Ranking Pipeline
 
 ```
-Stage 1 (Retrieve): Hybrid scoring → Top 50 candidates
+Stage 1 (Retrieve): Hybrid scoring (GNN + skill + seniority) → Top 50 candidates
   ↓
-Stage 2 (Rerank): MLP reranker trên 15 features → reorder
+Stage 2 (Rerank): MLP reranker trên 20 features → reorder
   ↓
-Output: Top K results (score từ Stage 1, thứ tự từ Stage 2)
+Output: Top K results (score từ Stage 1, thứ tự từ Stage 2, eligibility từ Calibration)
 ```
 
-**Nguyên tắc:** Reranker quyết định ORDER, Stage 1 giữ SCORE + eligibility. Tách biệt ranking quality và score calibration.
+**Nguyên tắc:** Reranker quyết định ORDER, Stage 1 giữ SCORE, Platt Calibration quyết định ELIGIBILITY.
 
-### Module Architecture (DI Pattern)
+### Architecture
 
 ```
-embedding/     EmbeddingProvider ABC → EnglishProvider / MultilingualStub
-crawler/       CrawlProvider ABC → JobSpyProvider (Indeed)
-reranker/      FeatureExtractor + Reranker (MLP)
-inference/     InferenceEngine (two-stage) + Checkpoint save/load
-cv_parser/     Section-based parsing (PDF/DOCX/text)
-api/           FastAPI (6 endpoints)
+Django Backend (DRF + Admin + PostgreSQL)
+  ├── apps/matching    → API endpoints (CV→Jobs matching)
+  ├── apps/jobs        → Job CRUD + Admin
+  ├── apps/cvs         → CV upload + Admin
+  ├── apps/skills      → Skill dictionary + Admin
+  ├── apps/users       → Auth (JWT)
+  │
+  └── ml_service/      → ML library (imported trực tiếp)
+      ├── crawler/     → Multi-provider crawling (DI pattern)
+      │   └── providers/  → auto-discovered
+      │       ├── jobspy_provider.py     Indeed/Glassdoor
+      │       ├── linkedin_provider.py   LinkedIn (Playwright + auth state)
+      │       ├── adzuna_provider.py     Adzuna REST API
+      │       └── remotive_provider.py   Remotive API
+      ├── cv_parser/   → PDF/DOCX section-based parsing
+      ├── data/        → Skill extraction, normalization, graph, LinkedIn CV loader
+      ├── embedding/   → EmbeddingProvider ABC → EnglishProvider
+      ├── graph/       → PyG HeteroData builder
+      ├── inference/   → Two-stage engine + GNN inductive inference + checkpoint
+      ├── models/      → HeteroGraphSAGE, HeteroRGCN, BPR loss
+      ├── reranker/    → MLP reranker (20 features) + Platt calibration
+      └── training/    → BPR trainer + hard negative sampling
 ```
-
-Thêm provider mới = implement ABC + register. Không sửa code hiện tại.
 
 ---
 
@@ -36,7 +50,7 @@ Thêm provider mới = implement ABC + register. Không sửa code hiện tại.
 ### Model: HeteroGraphSAGE
 
 ```
-Per-type Projection → GraphSAGE (2-3 layers, mean aggregation) → MLPDecoder
+Per-type Projection → GraphSAGE (3 layers, 256 hidden, mean aggregation) → MLPDecoder
 ```
 
 - **Tại sao GraphSAGE:** Inductive learning — CV/JD mới không cần retrain toàn graph
@@ -51,12 +65,27 @@ Per-type Projection → GraphSAGE (2-3 layers, mean aggregation) → MLPDecoder
   Enrich: skill→skill (co-occurrence PMI), job→job (similarity), cv→cv (similarity)
 ```
 
+### GNN Inductive Inference (cho new CV upload)
+
+```
+CV mới upload (không có trong graph)
+  → parse skills: [react, vuejs, typescript, ...]
+  → tạo temporary CV node trong graph
+  → connect tới Skill nodes: CV→react, CV→vuejs, CV→typescript
+  → connect tới Seniority node: CV→MID
+  → connect tới similar CVs (Jaccard ≥ 0.3)
+  → GraphSAGE encode trên expanded graph
+  → GNN embedding thật (128-dim) cho CV mới
+  → decode(gnn_cv, gnn_job) cho mỗi job
+  → Score discriminative (Vue CV gần Vue jobs, xa AI jobs)
+```
+
 ### Training
 
 - **Loss:** BPR (Bayesian Personalized Ranking) — tối ưu ranking trực tiếp
 - **Hard negative sampling:** 70% hard negatives (same role, similar skills, wrong match)
 - **Label edge stripping:** Remove match/no_match edges trước GNN message passing (prevent leakage)
-- **Early stopping:** Monitor val_mrr, patience=30
+- **Early stopping:** Monitor val_mrr, patience=50
 
 ---
 
@@ -65,9 +94,9 @@ Per-type Projection → GraphSAGE (2-3 layers, mean aggregation) → MLPDecoder
 ### Công thức
 
 ```
-final_score = min(base_score × role_penalty, must_have_cap) × edge_case_penalty
+final_score = base_score × role_penalty × must_have_penalty × edge_case_penalty
 
-base_score = 0.55 × text_similarity
+base_score = 0.55 × gnn_score
            + 0.30 × semantic_skill_overlap
            + 0.15 × seniority_score
 ```
@@ -76,11 +105,11 @@ base_score = 0.55 × text_similarity
 
 | # | Thành phần | Kỹ thuật |
 |---|-----------|---------|
-| 1 | Text similarity | Cosine(MiniLM embedding), normalize [-1,1]→[0,1] |
+| 1 | GNN score | Inductive GNN decode (0.6×GNN + 0.4×text cosine), hoặc text cosine fallback |
 | 2 | Semantic skill overlap | Per-JD importance (title=5, required=4, nice-to-have=2) + skill graph PMI partial credit |
 | 3 | Seniority score | Linear decay: max(0, 1 - distance × 0.4) |
 | 4 | Role penalty | Role classifier → compatible=1.0, mismatch=0.7 |
-| 5 | Must-have cap | Thiếu 1 required skill → cap 0.70, thiếu 2+ → cap 0.55 |
+| 5 | Must-have penalty | Multiplicative: missing 1→×0.9, missing 2→×0.75, missing 3+→×0.6 |
 | 6 | Edge case: generic CV | < 4 skills → ×0.85 |
 | 7 | Edge case: tool-only match | Chỉ match git/jira, không core skill → ×0.75 |
 
@@ -92,9 +121,6 @@ CV có: flask (không có django)
 
 Skill graph (PMI co-occurrence): flask relates_to django, similarity=0.7
 → credit = 4 × 0.7 × 0.6 = 1.68 (thay vì 0)
-
-Baseline chỉ thấy: django NOT in CV → 0 điểm
-GNN qua skill graph: flask → django → partial credit
 ```
 
 ---
@@ -111,18 +137,10 @@ GNN qua skill graph: flask → django → partial credit
 ±1 — TF-IDF boost (rare skill +1, common -1)
 ```
 
-### Zone Detection
-
-JD text split thành required zone vs nice-to-have zone bằng regex patterns:
-```
-required: "required", "must have", "requirements", "mandatory", "essential"
-nice-to-have: "nice to have", "preferred", "bonus", "plus", "optional"
-```
-
 ### False Positive Prevention
 
-- Single-char skills ("c", "r") cần context patterns: "C programming", "C/C++", "R Studio"
-- Skip tokens length <= 1
+- Single-char skills ("c", "r") cần context patterns
+- Section-based: vague skills (security, problem_solving) chỉ giữ nếu trong SKILLS section
 
 ---
 
@@ -133,17 +151,8 @@ nice-to-have: "nice to have", "preferred", "bonus", "plus", "optional"
 ```
 Step 1: Split CV thành sections (SKILLS, EXPERIENCE, PROJECTS, EDUCATION)
 Step 2: Scan FULL text cho skills (robust cho PDF formatting)
-Step 3: Filter: vague skills (security, problem_solving, communication, teamwork)
-        chỉ giữ nếu nằm trong SKILLS section
+Step 3: Filter vague skills chỉ giữ nếu trong SKILLS section
 ```
-
-**Tại sao không strict section-only:** PDF extraction tạo formatting khác nhau, section headers không luôn match regex → full text scan + filter robust hơn.
-
-### Seniority Inference
-
-- Check title first (stronger signal): "Senior", "Junior", "Lead", "Manager"
-- Fallback: check description first 500 chars
-- "Task manager" không trigger MANAGER (chỉ match "engineering manager", "project manager")
 
 ---
 
@@ -155,221 +164,112 @@ Step 3: Filter: vague skills (security, problem_solving, communication, teamwork
 Input: 20 features → Linear(32) → ReLU → Dropout(0.2) → Linear(32) → ReLU → Dropout(0.2) → Linear(1)
 Output: match probability (sigmoid)
 Training: BCEWithLogitsLoss, Adam optimizer, 50 epochs
-Accuracy: 77.8%
+Accuracy: ~75%
 ```
 
 ### 20 Features
 
 ```
 # Base features (1-15)
-text_similarity          — cosine(cv_embedding, jd_embedding)
-skill_overlap_jaccard    — |CV ∩ JD| / |CV ∪ JD|
-skill_overlap_weighted   — weighted by JD importance
-semantic_skill_overlap   — with graph relation partial credit
-missing_required_count   — count of missing importance≥4 skills
-missing_required_ratio   — missing / total required
-matched_skill_count      — number of matched skills
-total_job_skills         — JD total skill count
-seniority_distance       — |cv_level - jd_level|
-seniority_score          — linear decay
-role_penalty             — role compatibility
-experience_years         — CV experience
-cv_skill_count           — number of CV skills
-skill_specificity        — rarity of CV skills
-tool_ratio               — fraction of CV skills that are tools
+text_similarity, skill_overlap_jaccard, skill_overlap_weighted, semantic_skill_overlap,
+missing_required_count, missing_required_ratio, matched_skill_count, total_job_skills,
+seniority_distance, seniority_score, role_penalty, experience_years, cv_skill_count,
+skill_specificity, tool_ratio
 
 # Stage 1 + GNN signals (16-20)
-stage1_score             — full hybrid score from Stage 1
-gnn_score                — GNN text similarity component
-gnn_rank                 — normalized rank from Stage 1 (0-1)
-must_have_cap_triggered  — 0/0.5/1.0 based on missing required skills
-edge_case_penalty_triggered — 1.0 if generic CV / overqualified / tool-only match
+stage1_score, gnn_score, gnn_rank, must_have_cap_triggered, edge_case_penalty_triggered
 ```
-
-### Feature Importance (top 5 từ trained model)
-
-```
-role_penalty                   0.132  ← role match quan trọng nhất
-gnn_rank                       0.127  ← GNN ranking signal
-edge_case_penalty_triggered    0.124  ← edge case detection
-gnn_score                      0.121  ← GNN similarity
-stage1_score                   0.117  ← full hybrid score
-```
-
-GNN features (gnn_rank, gnn_score) nằm top 5 → GNN thực sự đóng góp vào reranking quality.
 
 ### Reranker = ORDER, Stage 1 = SCORE, Calibration = ELIGIBILITY
 
-```
-Reranker output: probability → quyết định thứ tự ranking
-Stage 1 score: hybrid scoring → hiển thị cho user
-Calibration: Platt scaling → quyết định eligible (threshold = 0.5)
-```
-
-Ba concerns tách biệt:
-- ORDER: reranker MLP (trained trên labeled pairs)
-- SCORE: Stage 1 hybrid (interpretable, 0.55×text + 0.30×skill + 0.15×seniority)
-- ELIGIBILITY: Platt sigmoid calibration (fit trên balanced validation data)
+Platt scaling (balanced fit) cho eligibility check: `P(match) = sigmoid(a×score + b)`
 
 ---
 
-## 6.5. Score Calibration (Platt Scaling)
+## 7. Multi-Provider Crawling
 
-### Vấn đề
+### Providers (auto-discovered DI pattern)
 
-Raw Stage 1 scores (0.65-0.85) không có probabilistic meaning. Score 0.7 không nghĩa là "70% xác suất match".
+| Provider | Source | Auth | Jobs crawled |
+|----------|--------|------|-------------|
+| `jobspy` | Indeed | Không | 4,234 |
+| `linkedin` | LinkedIn | Playwright + saved auth | 535 |
+| `adzuna` | Adzuna API | API key | — |
+| `remotive` | Remotive API | Không | — |
 
-### Giải pháp
+### LinkedIn Provider
 
-Platt scaling: fit sigmoid `P(match) = 1/(1 + exp(-(a×score + b)))` trên balanced validation data.
-
-```
-Parameters: a=0.865, b=-0.379
-Fit trên: 1000 balanced pairs (500 positive + 500 negative)
-Accuracy: ~50% (expected cho balanced calibration)
-```
-
-### Cách sử dụng
-
-```
-raw_score = 0.78 (Stage 1 hybrid)
-calibrated = sigmoid(0.865 × 0.78 - 0.379) = 0.58
-eligible = calibrated >= 0.5 → True ✅
-```
-
-### Tại sao fit trên balanced data
-
-Lần đầu fit trên imbalanced data (75% negative) → sigmoid bias low → tất cả scores < 0.5 → mọi kết quả `eligible=false`. Fix: balanced data → sigmoid centered đúng.
+- Playwright headless browser + saved auth state (cookies)
+- CSS selectors trong JSON config (update khi LinkedIn đổi HTML)
+- Stream save: mỗi job ghi ngay vào file (crash-safe)
+- Fingerprint dedup: normalize(title) + normalize(company) + city → MD5
 
 ---
 
-## 7. Role Classification
+## 8. Data
 
-### Role Categories
+### Hiện tại
 
-```
-frontend, backend, fullstack, devops, data, ml, mobile, security, other
-```
+| Data | Số lượng | Source |
+|------|---------|--------|
+| JDs | 4,769 unique | Indeed (US) + LinkedIn (VN + Remote) |
+| CVs | 362 | LinkedIn PDF profiles (Vietnamese IT) |
+| Skills | 208 canonical | skill-alias.json (aliases + categories) |
+| Skill graph | 2,736 edges | PMI co-occurrence |
 
-### Inference Logic
+### CV Dataset (LinkedIn Vietnamese IT)
 
-```
-1. Title pattern matching (strongest): "front-end" → frontend, "devops" → devops
-2. Skill-based (if ≥2 defining skills): react+vue → frontend
-3. Special: frontend + backend skills → fullstack
-```
-
-### Compatibility Matrix
-
-```
-frontend ↔ fullstack, mobile
-backend  ↔ fullstack, devops, data
-data     ↔ ml
-security ↔ devops, backend
-```
-
----
-
-## 8. Data Pipeline
-
-### Crawling
-
-- **Tool:** python-jobspy (Indeed)
-- **Scale:** 4.854 unique JDs, 70 IT queries
-- **Storage:** JSONL (append-safe, dedup by source_url)
-- **Skill extraction:** n-gram matching + TF-IDF importance
-
-### CV Dataset
-
-- **Source:** HuggingFace datasetmaster/resumes (4.817 IT resumes, MIT)
-- **Enrichment:** Extract skills từ BOTH structured fields AND full text (summary, responsibilities, projects)
-- **Result:** 73 unique CV skills, avg 13.4 skills/CV (trước enrichment: 39 skills, 5.4/CV)
-
-### Skill Dictionary
-
-- **208 canonical skills** organized by category (technical, soft, tool, domain)
-- **Alias mapping:** "ReactJS" → "react", "K8s" → "kubernetes", etc.
-- **Skill graph:** PMI co-occurrence → 3.613 skill pairs
-
-### Labeling
-
-- Rule-based + skill relations + noise
-- Positive: skill_overlap ≥ 0.5 AND seniority_dist ≤ 1, OR expanded_overlap ≥ 0.6 (via related skills)
-- Hard negative: 0.15 ≤ overlap < 0.5 AND seniority_dist ≤ 1
-- Label noise: 10% flip
+| Category | CVs | Avg skills |
+|----------|-----|-----------|
+| AI | filtered | 6.6 |
+| DevOps | filtered | 9.1 |
+| Software Engineer | filtered | 6.3 |
+| Tester | filtered | 2.2 |
+| Business Analyst | filtered | 1.9 |
+| UX/UI | filtered | 0.6 |
+| **Total (≥2 skills)** | **362** | **7.5** |
 
 ---
 
 ## 9. Kết quả
 
-### Benchmark (4.7K real JDs + 1K real CVs)
+### Benchmark (4,641 JDs + 362 LinkedIn CVs)
 
 ```
-GNN AUC-ROC: 0.6815 (was 0.63 before skill expansion)
-Reranker accuracy: 77.2% (MLP trên 20 features)
-Calibration: balanced Platt scaling (a=0.865, b=-0.379)
-Skill coverage: 208 skills, JD-CV overlap 80 skills
+Method                     auc_roc   recall@10   precision@10   ndcg@10
+Cosine Similarity          0.5732    0.0343      0.7000         0.7215
+Skill Overlap (Jaccard)    0.5095    0.0098      0.2000         0.2048
+BM25                       0.5647    0.0196      0.4000         0.4627
+GNN (Hybrid)               0.7225*   0.0245      0.5000         0.4572
 ```
 
-### GNN Inductive Inference
+**GNN AUC-ROC: 0.7225 — best, +21% vs best baseline**
+
+### Matching Demo (Frontend developer CV, 3 năm, VueJS)
 
 ```
-CV in graph:  real GNN decode → sigmoid(decoder(z_cv, z_job))
-              blended 0.6×GNN + 0.4×text similarity
-CV new upload: fallback to text similarity (MiniLM cosine)
+#1 Software Engineer - McKinsey Digital              0.668
+#3 Fullstack Engineer (Typescript/PHP)               0.650  [matched vuejs!]
+#4 React Developer                                   0.795
+#8 Software Dev Engineer (Frontend) - Paradox DaNang  0.787  [Vietnamese company!]
 ```
 
-Precompute cả CV + Job GNN embeddings tại init. z_dict cached cho fast decode.
-
-### Inference Demo
-
-**CV 1: Vue/React Frontend developer, 3 năm kinh nghiệm**
-
-```
-#1 React Developer        0.81  ✅  matched: react, typescript, tailwind, rest_api, git, html_css, javascript
-#2 Web Developer           0.79  ✅  matched: vuejs, react, sass, ci_cd, rest_api, git, html_css, javascript
-#3 Technical Writer        0.68  ✅
-#4 IT Developer            0.66  ✅  matched: mongodb, mysql, nodejs, react, rest_api, git, javascript
-#5 Software Engineer       0.66  ✅  matched: vuejs, react, typescript, nodejs, html_css, javascript
-```
-
-**CV 2: React/AI student, 1 năm kinh nghiệm**
-
-```
-#1 IT Developer            0.66  ✅  matched: express, mongodb, nodejs, postgresql, python, react, rest_api, git, javascript
-#2 React Developer         0.82  ✅  matched: nextjs, react, redux, typescript, rest_api, git, html_css, javascript
-#3 Front End Developer     0.70  ✅  matched: nextjs, react, typescript, javascript
-#4 Web Developer           0.69  ✅  matched: figma, react, rest_api, git, html_css, javascript
-#5 Software Engineer (Viz) 0.70  ✅  matched: machine_learning, python, react, typescript, javascript
-```
-
-**Không có AI/ML/Security/SAP trong top 10 cho cả 2 CVs ✅**
-**Tất cả eligible=true với calibrated threshold ✅**
-**New skills detected: nextjs, redux, figma, express, material_ui, machine_learning ✅**
-
-### Improvement journey
-
-| Version | Top issue | Fix | Result |
-|---------|-----------|-----|--------|
-| v1 | AI jobs in top 3 cho Frontend CV | — | Sai role matching |
-| v2 | Text dominate (α=0.85) | Role penalty + rebalance weights | AI jobs tụt xuống #9 |
-| v3 | Missing required skills | Must-have cap + semantic skills | AI jobs biến mất |
-| v4 | Scores quá thấp | Tách order/score/eligibility | Scores 0.66-0.83 |
-| v5 | Calibration imbalanced | Balanced Platt scaling | Threshold meaningful |
-| v6 | Skill coverage 143 | Expand 208 skills + GNN decode | AUC +5%, 80 shared skills |
+- VueJS jobs xuất hiện nhờ LinkedIn VN JDs ✅
+- Vietnamese companies trong top 10 ✅
+- NO AI/ML/Security false positives ✅
 
 ---
 
 ## 10. API Endpoints
 
 ```
-POST /match/jd         — JD text → Top K CVs
-POST /match/cv         — CV text → Top K Jobs
-POST /match/cv/upload  — Upload CV PDF/DOCX → Top K Jobs
-POST /parse/cv         — CV text → parsed structured data (debug)
-POST /parse/cv/upload  — Upload CV PDF/DOCX → parsed data (debug)
-GET  /health           — status + stats
+POST /api/matching/cv/           — CV text → Top K jobs
+POST /api/matching/cv/upload/    — Upload CV PDF/DOCX → Top K jobs
+POST /api/matching/parse/        — CV text → parsed skills (debug)
+POST /api/matching/parse/upload/ — Upload CV → parsed skills (debug)
+GET  /api/docs/                  — Swagger UI
 
-Run: uvicorn ml_service.api.app:app --port 8001
-Docs: http://localhost:8001/docs
+Admin: /admin/ (Django Admin — full CRUD cho jobs, CVs, skills, users)
+
+Run: cd backend && .venv/bin/python manage.py runserver 8000
 ```
