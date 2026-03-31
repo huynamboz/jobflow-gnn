@@ -6,13 +6,14 @@ urlpatterns = [
     # Django Admin (built-in)
     path("admin/", admin.site.urls),
 
-    # Auth (public)
+    # Public APIs
     path("api/auth/", include("apps.users.urls")),
-
-    # Matching (public)
+    path("api/jobs/", include("apps.jobs.urls")),
+    path("api/cvs/", include("apps.cvs.urls")),
+    path("api/skills/", include("apps.skills.urls")),
     path("api/matching/", include("apps.matching.urls")),
 
-    # Admin-only management
+    # Admin-only APIs
     path("api/admin/users/", include("apps.users.admin_urls")),
     path("api/admin/", include("apps.jobs.admin_urls")),
     path("api/admin/", include("apps.matching.admin_urls")),

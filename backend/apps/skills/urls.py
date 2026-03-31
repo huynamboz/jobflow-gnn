@@ -1,3 +1,7 @@
 from django.urls import path
 
-urlpatterns = []
+from apps.skills.views import SkillListView
+
+urlpatterns = [
+    path("", SkillListView.as_view(), name="skill-list"),
+]
