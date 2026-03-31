@@ -1,8 +1,8 @@
 import tempfile
 from pathlib import Path
 
-from drf_spectacular.utils import extend_schema
-from rest_framework import status
+from drf_spectacular.utils import OpenApiTypes, extend_schema, inline_serializer
+from rest_framework import serializers, status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -40,7 +40,18 @@ class MatchCVUploadView(APIView):
     permission_classes = [AllowAny]
     parser_classes = [MultiPartParser, FormParser]
 
-    @extend_schema(request=CVFileMatchRequest, responses={200: JobMatchResponse(many=True)})
+    @extend_schema(
+        request={
+            "multipart/form-data": inline_serializer(
+                name="CVFileUpload",
+                fields={
+                    "file": serializers.FileField(help_text="CV file (PDF/DOCX/TXT)"),
+                    "top_k": serializers.IntegerField(default=10, required=False),
+                },
+            )
+        },
+        responses={200: JobMatchResponse(many=True)},
+    )
     def post(self, request):
         file = request.FILES.get("file")
         if not file:
@@ -57,7 +68,6 @@ class MatchCVUploadView(APIView):
 
         top_k = int(request.data.get("top_k", 10))
 
-        # Save to temp file
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             for chunk in file.chunks():
                 tmp.write(chunk)
@@ -97,7 +107,17 @@ class ParseCVUploadView(APIView):
     permission_classes = [AllowAny]
     parser_classes = [MultiPartParser, FormParser]
 
-    @extend_schema(request=CVFileMatchRequest, responses={200: CVParseResponse})
+    @extend_schema(
+        request={
+            "multipart/form-data": inline_serializer(
+                name="CVFileParseUpload",
+                fields={
+                    "file": serializers.FileField(help_text="CV file (PDF/DOCX/TXT)"),
+                },
+            )
+        },
+        responses={200: CVParseResponse},
+    )
     def post(self, request):
         file = request.FILES.get("file")
         if not file:

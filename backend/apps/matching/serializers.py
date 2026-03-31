@@ -10,6 +10,10 @@ class CVFileMatchRequest(serializers.Serializer):
     file = serializers.FileField(help_text="CV file (PDF/DOCX/TXT)")
     top_k = serializers.IntegerField(default=10, min_value=1, max_value=100, required=False)
 
+    class Meta:
+        # Tell drf-spectacular this is multipart
+        pass
+
 
 class JobMatchResponse(serializers.Serializer):
     job_id = serializers.IntegerField()
