@@ -66,6 +66,16 @@ def load_checkpoint(
     data_prepared = prepare_data_for_gnn(data_clean)
     metadata = data_prepared.metadata()
 
+    # Read saved config if available
+    meta = {}
+    meta_path = path / "metadata.json"
+    if meta_path.exists():
+        with open(meta_path, encoding="utf-8") as f:
+            meta = json.load(f)
+        train_cfg = meta.get("train_config", {})
+        hidden_channels = train_cfg.get("hidden_channels", hidden_channels)
+        num_layers = train_cfg.get("num_layers", num_layers)
+
     model = HeteroGraphSAGE(
         metadata=metadata,
         hidden_channels=hidden_channels,
@@ -81,12 +91,6 @@ def load_checkpoint(
     with open(path / "jobs.json", encoding="utf-8") as f:
         job_dicts = json.load(f)
     jobs = [_dict_to_job(d) for d in job_dicts]
-
-    meta = {}
-    meta_path = path / "metadata.json"
-    if meta_path.exists():
-        with open(meta_path, encoding="utf-8") as f:
-            meta = json.load(f)
 
     logger.info("Checkpoint loaded from %s (%d CVs, %d jobs)", path, len(cvs), len(jobs))
     return model, data, cvs, jobs, meta

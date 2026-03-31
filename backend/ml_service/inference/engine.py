@@ -355,46 +355,137 @@ class InferenceEngine:
             z_dict = self._model.encode(data_clean)
         return z_dict["cv"], z_dict["job"], z_dict
 
-    def _gnn_score_for_job(self, cv: CVData, job: JobData) -> float:
-        """Compute GNN-based similarity between CV and Job.
+    def _inductive_gnn_encode_cv(self, cv: CVData) -> torch.Tensor | None:
+        """Add new CV as temporary node in graph → run GNN encode → return embedding.
 
-        If job is in the graph (has precomputed embedding), use GNN decode.
-        Otherwise fall back to text similarity.
+        GraphSAGE is inductive: new node only needs edges to existing nodes (Skills, Seniority).
+        After encode, the new CV node has a GNN embedding that captures graph structure.
+        """
+        from ml_service.training.trainer import _strip_label_edges
+
+        try:
+            data = _strip_label_edges(self._data)
+
+            # Get existing graph dimensions
+            num_cvs = data["cv"].x.shape[0]
+            skill_names = sorted(self._normalizer.skill_catalog.keys())
+            skill_to_idx = {s: i for i, s in enumerate(skill_names)}
+
+            # Build new CV node features (same as GraphBuilder)
+            cv_emb = self._embed.encode([cv.text])  # (1, 384)
+            # Normalize experience/education to match training data range
+            cv_extra = np.array([[cv.experience_years / 20.0, float(cv.education) / 4.0]], dtype=np.float32)
+            new_cv_feat = torch.from_numpy(np.concatenate([cv_emb, cv_extra], axis=1))  # (1, 386)
+
+            # Append to existing CV nodes
+            data["cv"].x = torch.cat([data["cv"].x, new_cv_feat], dim=0)
+            new_cv_idx = num_cvs  # index of the appended node
+
+            # Add has_skill edges: new CV → Skill nodes
+            new_hs_src, new_hs_dst, new_hs_attr = [], [], []
+            for skill in cv.skills:
+                if skill in skill_to_idx:
+                    new_hs_src.append(new_cv_idx)
+                    new_hs_dst.append(skill_to_idx[skill])
+                    new_hs_attr.append(3.0)  # default proficiency
+
+            if new_hs_src:
+                old_ei = data["cv", "has_skill", "skill"].edge_index
+                old_attr = data["cv", "has_skill", "skill"].edge_attr
+                new_ei = torch.tensor([new_hs_src, new_hs_dst], dtype=torch.long)
+                new_attr = torch.tensor(new_hs_attr, dtype=torch.float)
+                data["cv", "has_skill", "skill"].edge_index = torch.cat([old_ei, new_ei], dim=1)
+                data["cv", "has_skill", "skill"].edge_attr = torch.cat([old_attr, new_attr])
+
+            # Add has_seniority edge: new CV → Seniority node
+            old_sen_ei = data["cv", "has_seniority", "seniority"].edge_index
+            new_sen_ei = torch.tensor([[new_cv_idx], [int(cv.seniority)]], dtype=torch.long)
+            data["cv", "has_seniority", "seniority"].edge_index = torch.cat([old_sen_ei, new_sen_ei], dim=1)
+
+            # Add similar_profile edges if they exist
+            if ("cv", "similar_profile", "cv") in data.edge_types:
+                # Find similar CVs by skill overlap
+                cv_skills = set(cv.skills)
+                sim_src, sim_dst, sim_attr = [], [], []
+                for i, existing_cv in enumerate(self._cvs):
+                    existing_skills = set(existing_cv.skills)
+                    union = cv_skills | existing_skills
+                    if union:
+                        overlap = len(cv_skills & existing_skills) / len(union)
+                        if overlap >= 0.3:
+                            sim_src.extend([new_cv_idx, i])
+                            sim_dst.extend([i, new_cv_idx])
+                            sim_attr.extend([overlap, overlap])
+                if sim_src:
+                    old_sp_ei = data["cv", "similar_profile", "cv"].edge_index
+                    old_sp_attr = data["cv", "similar_profile", "cv"].edge_attr
+                    new_sp_ei = torch.tensor([sim_src, sim_dst], dtype=torch.long)
+                    new_sp_attr = torch.tensor(sim_attr, dtype=torch.float)
+                    data["cv", "similar_profile", "cv"].edge_index = torch.cat([old_sp_ei, new_sp_ei], dim=1)
+                    data["cv", "similar_profile", "cv"].edge_attr = torch.cat([old_sp_attr, new_sp_attr])
+
+            # Run GNN encode on expanded graph
+            data = prepare_data_for_gnn(data)
+            self._model.eval()
+            with torch.no_grad():
+                z_dict = self._model.encode(data)
+
+            # Return the embedding of the new CV node (last one)
+            return z_dict["cv"][new_cv_idx]
+
+        except Exception as e:
+            logger.warning("Inductive GNN encode failed: %s, falling back to text similarity", e)
+            return None
+
+    def _gnn_score_for_job(self, cv: CVData, job: JobData) -> float:
+        """Compute GNN-based score between CV and Job.
+
+        For new CVs: inductive inference (add to graph → encode → decode).
+        For existing CVs: use precomputed embeddings.
         """
         job_idx = next(
             (i for i, j in enumerate(self._jobs) if j.job_id == job.job_id),
             None,
         )
-        if job_idx is not None and self._cv_embeddings is not None and self._job_embeddings is not None:
-            # Use precomputed GNN job embedding + text embedding for CV
-            job_emb = self._job_embeddings[job_idx]  # [hidden]
+        if job_idx is None or self._job_embeddings is None:
+            return self._text_similarity(cv, job)
 
-            # For new CV: use text embedding cosine as proxy for CV GNN embedding
-            # (real inductive inference would require adding CV to graph)
-            cv_text_emb = self._embed.encode([cv.text])[0]
-            job_text_emb = self._embed.encode([job.text])[0]
+        # Check if CV is already in graph
+        cv_idx = next(
+            (i for i, c in enumerate(self._cvs) if c.cv_id == cv.cv_id),
+            None,
+        )
 
-            # Blend: GNN job embedding similarity + text similarity
-            text_sim = self._cosine(cv_text_emb, job_text_emb)
+        if cv_idx is not None:
+            # Existing CV → use precomputed decode
+            cv_idx_t = torch.tensor([cv_idx], dtype=torch.long)
+            job_idx_t = torch.tensor([job_idx], dtype=torch.long)
+            with torch.no_grad():
+                gnn_raw = self._model.decode(self._z_dict, cv_idx_t, job_idx_t).item()
+            gnn_norm = 1.0 / (1.0 + np.exp(-gnn_raw))
+            text_sim = self._text_similarity(cv, job)
+            return 0.6 * gnn_norm + 0.4 * text_sim
 
-            # Use decoder if CV is in graph
-            cv_idx = next(
-                (i for i, c in enumerate(self._cvs) if c.cv_id == cv.cv_id),
-                None,
-            )
-            if cv_idx is not None:
-                # Both in graph → real GNN decode
-                cv_idx_t = torch.tensor([cv_idx], dtype=torch.long)
-                job_idx_t = torch.tensor([job_idx], dtype=torch.long)
-                with torch.no_grad():
-                    gnn_raw = self._model.decode(self._z_dict, cv_idx_t, job_idx_t).item()
-                # Normalize to [0, 1] using sigmoid
-                gnn_norm = 1.0 / (1.0 + np.exp(-gnn_raw))
-                # Blend GNN decode + text similarity
-                return 0.6 * gnn_norm + 0.4 * text_sim
-            else:
-                return text_sim
+        # New CV → inductive inference
+        if not hasattr(self, "_inductive_cache"):
+            self._inductive_cache = {}
 
+        cache_key = id(cv)
+        if cache_key not in self._inductive_cache:
+            cv_emb = self._inductive_gnn_encode_cv(cv)
+            self._inductive_cache = {cache_key: cv_emb}  # single-entry cache
+
+        cv_emb = self._inductive_cache.get(cache_key)
+        if cv_emb is not None:
+            # Use GNN decoder: score = MLP(concat(cv_emb, job_emb))
+            job_emb = self._job_embeddings[job_idx]
+            with torch.no_grad():
+                gnn_raw = self._model.decoder(cv_emb.unsqueeze(0), job_emb.unsqueeze(0)).item()
+            gnn_norm = 1.0 / (1.0 + np.exp(-gnn_raw))
+            text_sim = self._text_similarity(cv, job)
+            return 0.6 * gnn_norm + 0.4 * text_sim
+
+        # Fallback
         return self._text_similarity(cv, job)
 
     @staticmethod
@@ -482,11 +573,10 @@ class InferenceEngine:
 
     @staticmethod
     def _apply_must_have_penalty(score: float, cv: CVData, job: JobData) -> float:
-        """Cap score if CV is missing high-importance (required) skills.
+        """Penalize score if CV is missing high-importance (required) skills.
 
         Skills with importance >= 4 are considered "must-have".
-        Missing 1 must-have → cap at 0.70
-        Missing 2+ must-haves → cap at 0.55
+        Multiplicative penalty to preserve score variance (not hard cap).
         """
         if not job.skills:
             return score
@@ -497,10 +587,12 @@ class InferenceEngine:
             if importance >= 4 and skill not in cv_set:
                 missing_required += 1
 
-        if missing_required >= 2:
-            return min(score, 0.55)
+        if missing_required >= 3:
+            score *= 0.6
+        elif missing_required == 2:
+            score *= 0.75
         elif missing_required == 1:
-            return min(score, 0.70)
+            score *= 0.9
         return score
 
     @staticmethod

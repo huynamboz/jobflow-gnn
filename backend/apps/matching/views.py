@@ -42,13 +42,14 @@ class MatchCVUploadView(APIView):
 
     @extend_schema(
         request={
-            "multipart/form-data": inline_serializer(
-                name="CVFileUpload",
-                fields={
-                    "file": serializers.FileField(help_text="CV file (PDF/DOCX/TXT)"),
-                    "top_k": serializers.IntegerField(default=10, required=False),
+            "multipart/form-data": {
+                "type": "object",
+                "properties": {
+                    "file": {"type": "string", "format": "binary", "description": "CV file (PDF/DOCX/TXT)"},
+                    "top_k": {"type": "integer", "default": 10, "description": "Number of top jobs to return"},
                 },
-            )
+                "required": ["file"],
+            }
         },
         responses={200: JobMatchResponse(many=True)},
     )
@@ -109,12 +110,13 @@ class ParseCVUploadView(APIView):
 
     @extend_schema(
         request={
-            "multipart/form-data": inline_serializer(
-                name="CVFileParseUpload",
-                fields={
-                    "file": serializers.FileField(help_text="CV file (PDF/DOCX/TXT)"),
+            "multipart/form-data": {
+                "type": "object",
+                "properties": {
+                    "file": {"type": "string", "format": "binary", "description": "CV file (PDF/DOCX/TXT)"},
                 },
-            )
+                "required": ["file"],
+            }
         },
         responses={200: CVParseResponse},
     )

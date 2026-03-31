@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ml_service.data.resume_loader import load_resumes
+from ml_service.data.linkedin_cv_loader import load_linkedin_cvs
 from ml_service.data.skill_extractor import SkillExtractor
 from ml_service.crawler.storage import deduplicate, load_raw_jobs
 from ml_service.data.labeler import PairLabeler
@@ -39,22 +39,23 @@ RAW_JOBS_PATH = Path("data/raw_jobs.jsonl")
 SKILL_ALIAS_PATH = "ml_service/data/skill-alias.json"
 CHECKPOINT_DIR = Path("checkpoints/latest")
 
-CV_SOURCE = "datasetmaster"
-MAX_CVS = 1000
-NUM_POSITIVE_PAIRS = 1500
+LINKEDIN_DATASET_DIR = Path("/Users/huynam/Documents/PROJECT/jobflow-gnn/Dataset")
+LINKEDIN_CATEGORIES = ["AI", "Devops", "Software Engineer", "Tester", "Business Analyst", "UX_UI"]
+NUM_POSITIVE_PAIRS = 2000
 NOISE_RATE = 0.10
 SEED = 42
 
 TRAIN_CONFIG = TrainConfig(
-    hidden_channels=128,
-    num_layers=2,
-    lr=5e-3,
+    model_type="graphsage",
+    hidden_channels=256,
+    num_layers=3,
+    lr=1e-3,
     weight_decay=1e-5,
-    epochs=200,
-    patience=30,
-    hybrid_alpha=0.8,
-    hybrid_beta=0.15,
-    hybrid_gamma=0.05,
+    epochs=300,
+    patience=50,
+    hybrid_alpha=0.55,
+    hybrid_beta=0.30,
+    hybrid_gamma=0.15,
 )
 
 
@@ -76,13 +77,17 @@ def main() -> None:
     ]
     logger.info("Loaded %d real JDs", len(jobs))
 
-    logger.info("Loading real CVs (source=%s, max=%d)...", CV_SOURCE, MAX_CVS)
-    cvs = load_resumes(normalizer, source=CV_SOURCE, max_resumes=MAX_CVS)
-    logger.info("Loaded %d real CVs", len(cvs))
+    logger.info("Loading LinkedIn CVs from %s...", LINKEDIN_DATASET_DIR)
+    cvs = load_linkedin_cvs(
+        LINKEDIN_DATASET_DIR, normalizer,
+        min_skills=2,
+        categories=LINKEDIN_CATEGORIES,
+    )
+    logger.info("Loaded %d LinkedIn CVs", len(cvs))
 
     # --- Label pairs ---
     labeler = PairLabeler(seed=SEED)
-    pairs = labeler.create_pairs(cvs, jobs, num_positive=NUM_POSITIVE_PAIRS, noise_rate=NOISE_RATE)
+    pairs = labeler.create_pairs(cvs, jobs, num_positive=NUM_POSITIVE_PAIRS, noise_rate=NOISE_RATE, use_skill_relations=True)
     dataset = labeler.split(pairs)
     logger.info("Pairs: %d, split: %d/%d/%d",
                 len(pairs), len(dataset.train), len(dataset.val), len(dataset.test))
@@ -147,7 +152,7 @@ def main() -> None:
             "test_metrics": result.test_metrics,
             "num_jds": len(jobs),
             "num_cvs": len(cvs),
-            "cv_source": CV_SOURCE,
+            "cv_source": "linkedin",
             "train_config": {
                 "hidden_channels": cfg.hidden_channels,
                 "num_layers": cfg.num_layers,
