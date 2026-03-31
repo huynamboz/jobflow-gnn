@@ -130,6 +130,11 @@ SPECTACULAR_SETTINGS = {
     "TITLE": "JobFlow-GNN API",
     "DESCRIPTION": "CV-Job matching powered by Graph Neural Networks",
     "VERSION": "0.1.0",
+    "TAGS": [
+        {"name": "Auth", "description": "Register, login, profile"},
+        {"name": "Matching", "description": "CV-Job matching"},
+        {"name": "Admin", "description": "Admin-only management (requires admin role)"},
+    ],
 }
 
 SIMPLE_JWT = {

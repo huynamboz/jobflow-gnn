@@ -31,7 +31,7 @@ class MatchCVTextView(APIView):
             cv_text=serializer.validated_data["text"],
             top_k=serializer.validated_data.get("top_k", 10),
         )
-        return Response(JobMatchResponse(results, many=True).data)
+        return Response({"success": True, "data": JobMatchResponse(results, many=True).data})
 
 
 class MatchCVUploadView(APIView):
@@ -57,13 +57,14 @@ class MatchCVUploadView(APIView):
         file = request.FILES.get("file")
         if not file:
             return Response(
-                {"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST
+                {"success": False, "error": {"code": "BAD_REQUEST", "message": "No file uploaded.", "status": 400}},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         suffix = Path(file.name).suffix.lower()
         if suffix not in (".pdf", ".docx", ".txt"):
             return Response(
-                {"error": f"Unsupported file type: {suffix}. Use .pdf, .docx, or .txt"},
+                {"success": False, "error": {"code": "BAD_REQUEST", "message": f"Unsupported file type: {suffix}. Use .pdf, .docx, or .txt", "status": 400}},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -81,11 +82,11 @@ class MatchCVUploadView(APIView):
 
         if not results:
             return Response(
-                {"error": "No skills could be extracted from the CV"},
+                {"success": False, "error": {"code": "UNPROCESSABLE_ENTITY", "message": "No skills could be extracted from the CV.", "status": 422}},
                 status=status.HTTP_422_UNPROCESSABLE_ENTITY,
             )
 
-        return Response(JobMatchResponse(results, many=True).data)
+        return Response({"success": True, "data": JobMatchResponse(results, many=True).data})
 
 
 class ParseCVTextView(APIView):
@@ -99,7 +100,7 @@ class ParseCVTextView(APIView):
         serializer.is_valid(raise_exception=True)
 
         result = parse_cv_text(serializer.validated_data["text"])
-        return Response(CVParseResponse(result).data)
+        return Response({"success": True, "data": CVParseResponse(result).data})
 
 
 class ParseCVUploadView(APIView):
@@ -124,13 +125,14 @@ class ParseCVUploadView(APIView):
         file = request.FILES.get("file")
         if not file:
             return Response(
-                {"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST
+                {"success": False, "error": {"code": "BAD_REQUEST", "message": "No file uploaded.", "status": 400}},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         suffix = Path(file.name).suffix.lower()
         if suffix not in (".pdf", ".docx", ".txt"):
             return Response(
-                {"error": f"Unsupported file type: {suffix}"},
+                {"success": False, "error": {"code": "BAD_REQUEST", "message": f"Unsupported file type: {suffix}. Use .pdf, .docx, or .txt", "status": 400}},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -144,4 +146,4 @@ class ParseCVUploadView(APIView):
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 
-        return Response(CVParseResponse(result).data)
+        return Response({"success": True, "data": CVParseResponse(result).data})
