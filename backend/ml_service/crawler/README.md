@@ -209,3 +209,105 @@ ml_service/
 │   ├── generator.py              Synthetic data
 │   ├── labeler.py                Pair labeling
 │   └── skill-alias.json          208 skills dictionary
+
+Các bước crawl 5000 IT jobs từ LinkedIn
+Bước 1: Clear file
+
+cd backend
+> data/raw_jobs.jsonl
+Bước 2: Check auth còn valid
+
+.venv/bin/python -c "
+from ml_service.crawler.providers.linkedin_auth import load_state_path
+import json
+path = load_state_path()
+state = json.load(open(path))
+session = next((c for c in state['cookies'] if c['name']=='li_at'), None)
+print('✅ Logged in' if session else '❌ Re-login needed')
+"
+Nếu expired → re-login:
+
+
+.venv/bin/python -m ml_service.crawler.providers.linkedin_auth
+Bước 3: Crawl
+
+.venv/bin/python -c "
+from ml_service.crawler import get_provider
+
+queries = [
+    # Vietnam market
+    ('frontend developer', 'Vietnam'),
+    ('backend developer', 'Vietnam'),
+    ('fullstack developer', 'Vietnam'),
+    ('react developer', 'Vietnam'),
+    ('vuejs developer', 'Vietnam'),
+    ('nodejs developer', 'Vietnam'),
+    ('python developer', 'Vietnam'),
+    ('java developer', 'Vietnam'),
+    ('devops engineer', 'Vietnam'),
+    ('data engineer', 'Vietnam'),
+    ('software engineer', 'Vietnam'),
+    ('mobile developer', 'Vietnam'),
+    ('QA engineer', 'Vietnam'),
+    ('AI engineer', 'Vietnam'),
+    ('cloud engineer', 'Vietnam'),
+    # Remote
+    ('frontend developer', 'Remote'),
+    ('react developer', 'Remote'),
+    ('vuejs developer', 'Remote'),
+    ('fullstack developer', 'Remote'),
+    ('typescript developer', 'Remote'),
+    ('python developer', 'Remote'),
+    ('nodejs developer', 'Remote'),
+    ('devops engineer', 'Remote'),
+    ('data engineer', 'Remote'),
+    ('software engineer', 'Remote'),
+    ('machine learning engineer', 'Remote'),
+    ('mobile developer', 'Remote'),
+    ('golang developer', 'Remote'),
+    ('rust developer', 'Remote'),
+    ('cloud engineer', 'Remote'),
+]
+
+p = get_provider('linkedin', headless=True, save_path='data/raw_jobs.jsonl')
+total = 0
+
+for query, location in queries:
+    try:
+        jobs = p.fetch(query, location=location, results_wanted=170)
+        total += len(jobs)
+        print(f'  {query:30s} ({location:8s}) -> {len(jobs)} jobs, total={total}')
+    except Exception as e:
+        print(f'  {query:30s} ({location:8s}) -> FAILED: {e}')
+
+print(f'\nDone: {total} jobs crawled')
+"
+30 queries × 170 results = target ~5,100. Sau dedup sẽ còn ~3,000-4,000 unique.
+
+Thời gian ước tính: ~30-45 phút (LinkedIn rate limiting + Playwright).
+
+Bước 4: Sau khi crawl xong — clean + import DB
+
+# Clean dedup
+.venv/bin/python -c "
+from ml_service.crawler.storage import load_raw_jobs, deduplicate, save_raw_jobs
+from pathlib import Path
+path = Path('data/raw_jobs.jsonl')
+jobs = load_raw_jobs(path)
+unique = deduplicate(jobs)
+path.unlink()
+save_raw_jobs(unique, path)
+print(f'Cleaned: {len(jobs)} -> {len(unique)} unique')
+"
+
+# Reset DB + import
+docker exec jobflow-db psql -U postgres -c "DROP DATABASE IF EXISTS jobflow;"
+docker exec jobflow-db psql -U postgres -c "CREATE DATABASE jobflow;"
+.venv/bin/python manage.py migrate
+DJANGO_SUPERUSER_PASSWORD=admin .venv/bin/python manage.py createsuperuser --username admin --email admin@local.dev --noinput
+.venv/bin/python manage.py sync_skills
+.venv/bin/python manage.py import_jobs
+.venv/bin/python manage.py import_cvs --dir /Users/huynam/Documents/PROJECT/jobflow-gnn/Dataset --categories "AI,Devops,Software Engineer,Tester,Business Analyst,UX_UI"
+Bước 5: Retrain model
+
+.venv/bin/python manage.py retrain_model

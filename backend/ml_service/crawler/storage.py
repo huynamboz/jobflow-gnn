@@ -181,6 +181,7 @@ def _raw_job_to_dict(job: RawJob) -> dict:
         "company_url": job.company_url,
         "job_type": job.job_type,
         "applicant_count": job.applicant_count,
+        "extra": dict(job.extra) if job.extra else {},
         "fingerprint": compute_fingerprint(job),
     }
 
@@ -209,4 +210,5 @@ def _dict_to_raw_job(obj: dict) -> RawJob:
         company_url=obj.get("company_url", ""),
         job_type=obj.get("job_type", ""),
         applicant_count=obj.get("applicant_count", ""),
+        extra=obj.get("extra", {}),
     )

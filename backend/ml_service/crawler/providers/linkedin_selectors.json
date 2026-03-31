@@ -54,6 +54,12 @@
     ]
   },
 
+  "about_company": {
+    "industry": ["section.jobs-company .t-14"],
+    "size": ["span.jobs-company__inline-information"],
+    "followers": ["div.artdeco-entity-lockup__subtitle"]
+  },
+
   "auth_check": {
     "expired_url_patterns": ["login", "authwall"]
   }

@@ -52,12 +52,15 @@ class JobService:
         if Job.objects.filter(platform=platform, fingerprint=fingerprint).exists():
             return None
 
-        # Get or create company
+        # Get or create company (with industry/size from extra)
+        extra = raw.extra if hasattr(raw, "extra") and isinstance(raw.extra, dict) else {}
         company = PlatformService.get_or_create_company(
             name=raw.company,
             platform=platform,
             logo_url=getattr(raw, "company_logo_url", ""),
             profile_url=getattr(raw, "company_url", ""),
+            industry=extra.get("company_industry", ""),
+            size=extra.get("company_size", ""),
         )
 
         # Extract skills + seniority

@@ -297,6 +297,29 @@ class LinkedInProvider(CrawlProvider):
                 if kw in btn_text:
                     job_type = (job_type + ", " + kw) if job_type else kw
 
+        # --- Company industry + size (About the company section) ---
+        company_industry = ""
+        company_size = ""
+        about_sel = sel.get("about_company", {})
+        industry_el = _query_first(page, about_sel.get("industry", []))
+        if industry_el:
+            company_industry = industry_el.inner_text().strip().split("\n")[0].strip()
+
+        size_els = page.query_selector_all(about_sel.get("size", [""])[0]) if about_sel.get("size") else []
+        for size_el in size_els:
+            text = size_el.inner_text().strip()
+            if "employee" in text.lower():
+                company_size = text
+                break
+
+        # --- Location from tertiary (APJ, Vietnam, etc.) ---
+        if not location and tertiary_el:
+            first_span = tertiary_el.query_selector(sel["detail_panel"]["tertiary_spans"][0])
+            if first_span:
+                loc_text = first_span.inner_text().strip()
+                if loc_text and "ago" not in loc_text and "applicant" not in loc_text.lower():
+                    location = loc_text
+
         # --- Clean URL ---
         if source_url and not source_url.startswith("http"):
             source_url = f"https://www.linkedin.com{source_url}"
@@ -316,6 +339,10 @@ class LinkedInProvider(CrawlProvider):
             company_url=company_url,
             job_type=job_type,
             applicant_count=applicant_count,
+            extra={
+                "company_industry": company_industry,
+                "company_size": company_size,
+            },
         )
 
     def _extract_salary(self, page) -> tuple[float | None, float | None, str]:
