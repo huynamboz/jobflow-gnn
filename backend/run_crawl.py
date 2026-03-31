@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 from ml_service.crawler import get_provider
-from ml_service.crawler.skill_extractor import SkillExtractor
+from ml_service.data.skill_extractor import SkillExtractor
 from ml_service.crawler.storage import deduplicate, load_raw_jobs, save_raw_jobs
 from ml_service.data.skill_normalization import SkillNormalizer
 
@@ -57,7 +57,7 @@ def main() -> None:
     logger.info("  Step 1: Crawl job postings via JobSpy")
     logger.info("=" * 60)
 
-    provider = get_provider("jobspy", sites=["indeed"])
+    provider = get_provider("jobspy", sites=["indeed", "glassdoor", "linkedin"])
     all_raw = []
 
     for term, location in QUERIES:

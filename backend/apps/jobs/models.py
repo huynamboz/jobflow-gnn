@@ -25,6 +25,7 @@ class Job(models.Model):
     # Source
     source = models.CharField(max_length=50, blank=True, default="")  # indeed, adzuna, etc.
     source_url = models.URLField(max_length=1000, blank=True, default="")
+    fingerprint = models.CharField(max_length=32, unique=True, db_index=True, blank=True, default="")
 
     # Skills (M2M through JobSkill)
     skills = models.ManyToManyField("skills.Skill", through="JobSkill", blank=True)

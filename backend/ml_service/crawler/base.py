@@ -16,7 +16,7 @@ from datetime import datetime
 class RawJob:
     """Provider-agnostic job posting."""
 
-    source: str  # e.g. "indeed", "adzuna", "topcv"
+    source: str  # e.g. "indeed", "adzuna", "topcv", "linkedin"
     source_url: str
     title: str
     company: str
@@ -28,6 +28,10 @@ class RawJob:
     date_posted: datetime | None = None
     seniority_hint: str | None = None  # raw text like "senior", "entry level"
     raw_skills: tuple[str, ...] = ()  # skills extracted by the provider (if any)
+    company_logo_url: str = ""  # company logo image URL
+    company_url: str = ""  # company profile URL (e.g. LinkedIn company page)
+    job_type: str = ""  # "full-time", "contract", "part-time", "remote"
+    applicant_count: str = ""  # e.g. "Over 100 applicants"
     extra: dict = field(default_factory=dict)  # provider-specific metadata
 
 

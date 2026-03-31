@@ -1,0 +1,55 @@
+{
+  "_meta": {
+    "description": "CSS selectors cho LinkedIn job crawling. Update khi LinkedIn đổi HTML structure.",
+    "last_updated": "2026-03-31"
+  },
+
+  "job_cards": {
+    "primary": "[data-occludable-job-id]",
+    "fallback": [
+      "li.jobs-search-results__list-item",
+      "div.job-search-card"
+    ]
+  },
+
+  "card": {
+    "title": ["h3", "[class*='title']", "a[class*='title']", "strong"],
+    "company": ["[class*='company']", "[class*='subtitle']", "h4"],
+    "location": ["[class*='location']", "[class*='bullet']"],
+    "link": ["a[href*='/jobs/view/']"]
+  },
+
+  "detail_panel": {
+    "description": [
+      "#job-details",
+      "div.jobs-description__content",
+      "article.jobs-description__container"
+    ],
+    "company_logo": [
+      "div.job-details-jobs-unified-top-card__company-name img",
+      "div.job-details-jobs-unified-top-card__container img.EntityPhoto-square-1"
+    ],
+    "company_url": [
+      "div.job-details-jobs-unified-top-card__company-name a[href*='/company/']"
+    ],
+    "tertiary_info": [
+      "div.job-details-jobs-unified-top-card__tertiary-description-container"
+    ],
+    "tertiary_spans": [
+      "span.tvm__text--low-emphasis"
+    ],
+    "fit_preferences": [
+      "div.job-details-fit-level-preferences button"
+    ],
+    "salary": [
+      "div.job-details-fit-level-preferences button",
+      "[class*='salary']",
+      "[class*='compensation']",
+      "#SALARY"
+    ]
+  },
+
+  "auth_check": {
+    "expired_url_patterns": ["login", "authwall"]
+  }
+}

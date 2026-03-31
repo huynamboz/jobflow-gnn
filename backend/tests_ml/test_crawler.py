@@ -9,7 +9,7 @@ import pytest
 
 from ml_service.crawler.base import CrawlProvider, RawJob
 from ml_service.crawler.factory import get_provider, register_provider
-from ml_service.crawler.skill_extractor import SkillExtractor
+from ml_service.data.skill_extractor import SkillExtractor
 from ml_service.crawler.storage import (
     deduplicate,
     load_raw_jobs,
@@ -198,20 +198,30 @@ def test_load_nonexistent_returns_empty():
     assert load_raw_jobs(Path("/nonexistent/file.jsonl")) == []
 
 
-def test_deduplicate():
+def test_deduplicate_by_url():
     jobs = [
-        _make_raw_job(source_url="https://example.com/1"),
-        _make_raw_job(source_url="https://example.com/1"),
-        _make_raw_job(source_url="https://example.com/2"),
+        _make_raw_job(source_url="https://example.com/1", title="Job A"),
+        _make_raw_job(source_url="https://example.com/1", title="Job A"),
+        _make_raw_job(source_url="https://example.com/2", title="Job B", company="Other Corp"),
     ]
     deduped = deduplicate(jobs)
     assert len(deduped) == 2
 
 
-def test_deduplicate_keeps_no_url():
+def test_deduplicate_by_fingerprint():
+    """Same job on different sources → dedup by fingerprint."""
     jobs = [
-        _make_raw_job(source_url=""),
-        _make_raw_job(source_url=""),
+        _make_raw_job(source_url="https://indeed.com/1", title="Senior Python Developer", company="Google Inc."),
+        _make_raw_job(source_url="https://adzuna.com/2", title="Sr. Python Dev", company="Google"),
     ]
     deduped = deduplicate(jobs)
-    assert len(deduped) == 2  # both kept (no URL to dedup on)
+    assert len(deduped) == 1  # same fingerprint
+
+
+def test_deduplicate_different_jobs():
+    jobs = [
+        _make_raw_job(source_url="", title="Python Developer", company="Google"),
+        _make_raw_job(source_url="", title="React Developer", company="Meta"),
+    ]
+    deduped = deduplicate(jobs)
+    assert len(deduped) == 2

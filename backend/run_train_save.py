@@ -16,8 +16,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ml_service.crawler.resume_loader import load_resumes
-from ml_service.crawler.skill_extractor import SkillExtractor
+from ml_service.data.resume_loader import load_resumes
+from ml_service.data.skill_extractor import SkillExtractor
 from ml_service.crawler.storage import deduplicate, load_raw_jobs
 from ml_service.data.labeler import PairLabeler
 from ml_service.data.skill_normalization import SkillNormalizer

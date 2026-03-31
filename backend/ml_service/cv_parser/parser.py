@@ -13,7 +13,7 @@ import logging
 import re
 from pathlib import Path
 
-from ml_service.crawler.skill_extractor import SkillExtractor
+from ml_service.data.skill_extractor import SkillExtractor
 from ml_service.data.skill_normalization import SkillNormalizer
 from ml_service.graph.schema import CVData, EducationLevel, SeniorityLevel
 

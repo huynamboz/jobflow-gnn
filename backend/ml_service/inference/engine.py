@@ -17,7 +17,7 @@ import torch
 from torch_geometric.data import HeteroData
 
 from ml_service.baselines.skill_overlap import SkillOverlapScorer
-from ml_service.crawler.skill_extractor import SkillExtractor
+from ml_service.data.skill_extractor import SkillExtractor
 from ml_service.data.skill_graph import build_skill_cooccurrence
 from ml_service.data.skill_normalization import SkillNormalizer
 from ml_service.embedding.base import EmbeddingProvider
