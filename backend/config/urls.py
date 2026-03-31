@@ -9,11 +9,13 @@ urlpatterns = [
     # Auth (public)
     path("api/auth/", include("apps.users.urls")),
 
-    # User endpoints (authenticated)
+    # Matching (public)
     path("api/matching/", include("apps.matching.urls")),
 
-    # Admin-only management endpoints
+    # Admin-only management
     path("api/admin/users/", include("apps.users.admin_urls")),
+    path("api/admin/", include("apps.jobs.admin_urls")),
+    path("api/admin/", include("apps.matching.admin_urls")),
 
     # Swagger
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),

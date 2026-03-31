@@ -108,26 +108,70 @@ class TrainService:
                 model.load_state_dict(best_state)
             model.eval()
 
-            checkpoint_path = settings.ML_CHECKPOINT_DIR
+            # Save checkpoint to versioned path
+            checkpoint_path = f"{settings.ML_CHECKPOINT_DIR}_{run.version}"
             save_checkpoint(checkpoint_path, model, data, cvs, jobs, metadata={
+                "version": run.version,
                 "best_epoch": result.best_epoch,
                 "test_metrics": result.test_metrics,
-                "train_config": {"hidden_channels": config.hidden_channels, "num_layers": config.num_layers},
+                "train_config": {
+                    "model_type": config.model_type,
+                    "hidden_channels": config.hidden_channels,
+                    "num_layers": config.num_layers,
+                    "lr": config.lr,
+                },
             })
 
-            # Update run
+            elapsed = time.time() - t_start
+            metrics = result.test_metrics
+
+            # Update run with full details
             run.status = TrainRun.Status.COMPLETED
-            run.auc_roc = result.test_metrics.get("auc_roc")
+            run.auc_roc = metrics.get("auc_roc")
+            run.recall_at_5 = metrics.get("recall@5")
+            run.recall_at_10 = metrics.get("recall@10")
+            run.precision_at_5 = metrics.get("precision@5")
+            run.precision_at_10 = metrics.get("precision@10")
+            run.ndcg_at_10 = metrics.get("ndcg@10")
+            run.mrr = metrics.get("mrr")
             run.best_epoch = result.best_epoch
             run.final_loss = result.train_losses[-1] if result.train_losses else None
-            run.metrics_json = result.test_metrics
-            run.config_json = {"hidden_channels": config.hidden_channels, "num_layers": config.num_layers, "lr": config.lr}
+            run.metrics_json = metrics
+            run.model_type = config.model_type
+            run.hidden_channels = config.hidden_channels
+            run.num_layers = config.num_layers
+            run.learning_rate = config.lr
+            run.config_json = {
+                "model_type": config.model_type,
+                "hidden_channels": config.hidden_channels,
+                "num_layers": config.num_layers,
+                "lr": config.lr,
+                "hybrid_alpha": config.hybrid_alpha,
+                "hybrid_beta": config.hybrid_beta,
+                "hybrid_gamma": config.hybrid_gamma,
+                "epochs": config.epochs,
+                "patience": config.patience,
+            }
             run.checkpoint_path = checkpoint_path
             run.completed_at = timezone.now()
+            run.training_duration_seconds = int(elapsed)
             run.save()
 
-            elapsed = time.time() - t_start
-            logger.info("Training completed in %.1fs: AUC=%.4f", elapsed, run.auc_roc or 0)
+            # Auto-activate if best AUC so far
+            best_previous = TrainRun.objects.filter(
+                status=TrainRun.Status.COMPLETED,
+                is_active=True,
+            ).first()
+            if not best_previous or (run.auc_roc and run.auc_roc > (best_previous.auc_roc or 0)):
+                run.activate()
+                # Copy to "latest" for backward compat
+                import shutil
+                latest_path = settings.ML_CHECKPOINT_DIR
+                if checkpoint_path != latest_path:
+                    shutil.copytree(checkpoint_path, latest_path, dirs_exist_ok=True)
+                logger.info("Activated %s as live model (AUC=%.4f)", run.version, run.auc_roc or 0)
+
+            logger.info("Training %s completed in %ds: AUC=%.4f", run.version, int(elapsed), run.auc_roc or 0)
 
         except Exception as e:
             run.status = TrainRun.Status.FAILED
