@@ -20,6 +20,11 @@
   },
 
   "detail_panel": {
+    "title": [
+      "h1.t-24.t-bold",
+      "div.job-details-jobs-unified-top-card__job-title h1",
+      "h1.job-details-jobs-unified-top-card__job-title"
+    ],
     "description": [
       "#job-details",
       "div.jobs-description__content",

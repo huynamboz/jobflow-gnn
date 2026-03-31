@@ -210,13 +210,8 @@ class LinkedInProvider(CrawlProvider):
         location_el = _query_first(card, sel["card"]["location"])
         link_el = _query_first(card, sel["card"]["link"])
 
-        title = title_el.inner_text().strip() if title_el else ""
-        company = company_el.inner_text().strip() if company_el else ""
-        location = location_el.inner_text().strip() if location_el else ""
+        # Get link before clicking
         source_url = link_el.get_attribute("href") if link_el else ""
-
-        if not title:
-            return None
 
         # Click card to load detail panel
         try:
@@ -224,6 +219,33 @@ class LinkedInProvider(CrawlProvider):
             time.sleep(1.5)
         except Exception:
             pass
+
+        # --- Title from detail panel (clean, not card which has noise) ---
+        title = ""
+        title_detail = _query_first(page, sel["detail_panel"]["title"])
+        if title_detail:
+            title = title_detail.inner_text().strip()
+        if not title:
+            # Fallback: card title, take first line only
+            raw = title_el.inner_text().strip() if title_el else ""
+            title = raw.split("\n")[0].strip()
+
+        # --- Company from detail panel (clean) ---
+        company = ""
+        company_detail = _query_first(page, sel["detail_panel"]["company_url"])
+        if company_detail:
+            company = company_detail.inner_text().strip()
+        if not company:
+            company = company_el.inner_text().strip() if company_el else ""
+
+        # --- Location from detail panel ---
+        location = ""
+        location_el_card = _query_first(card, sel["card"]["location"])
+        if location_el_card:
+            location = location_el_card.inner_text().strip()
+
+        if not title:
+            return None
 
         # --- Description ---
         description = ""
