@@ -41,8 +41,8 @@ CHECKPOINT_DIR = Path("checkpoints/latest")
 
 LINKEDIN_DATASET_DIR = Path("/Users/huynam/Documents/PROJECT/jobflow-gnn/Dataset")
 LINKEDIN_CATEGORIES = ["AI", "Devops", "Software Engineer", "Tester", "Business Analyst", "UX_UI"]
-NUM_POSITIVE_PAIRS = 2000
-NOISE_RATE = 0.10
+NUM_POSITIVE_PAIRS = 3500
+NOISE_RATE = 0.05
 SEED = 42
 
 TRAIN_CONFIG = TrainConfig(
@@ -52,7 +52,7 @@ TRAIN_CONFIG = TrainConfig(
     lr=1e-3,
     weight_decay=1e-5,
     epochs=300,
-    patience=50,
+    patience=80,
     hybrid_alpha=0.55,
     hybrid_beta=0.30,
     hybrid_gamma=0.15,
@@ -67,6 +67,7 @@ def main() -> None:
     normalizer = SkillNormalizer(SKILL_ALIAS_PATH)
     raw_jobs = deduplicate(load_raw_jobs(RAW_JOBS_PATH))
     extractor = SkillExtractor(normalizer)
+    extractor.fit(raw_jobs)
     all_jobs = extractor.extract_batch(raw_jobs)
     jobs = [j for j in all_jobs if len(j.skills) >= 2]
     jobs = [
@@ -166,7 +167,7 @@ def main() -> None:
 
     total = time.time() - t_start
     logger.info("Done in %.1fs. Checkpoint: %s", total, CHECKPOINT_DIR)
-    logger.info("Data: %d real JDs + %d real CVs (%s)", len(jobs), len(cvs), CV_SOURCE)
+    logger.info("Data: %d real JDs + %d real CVs (linkedin)", len(jobs), len(cvs))
 
 
 if __name__ == "__main__":

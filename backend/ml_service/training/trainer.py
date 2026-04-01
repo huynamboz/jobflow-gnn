@@ -195,7 +195,7 @@ class Trainer:
         optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
 
         result = TrainResult()
-        best_val_mrr = -1.0
+        best_val_signal = -1.0
         patience_counter = 0
         best_state = None
 
@@ -232,12 +232,13 @@ class Trainer:
                 )
             result.val_metrics_history.append(val_metrics)
 
-            val_mrr = val_metrics.get("mrr", 0.0)
-            logger.info("Epoch %d — loss=%.4f, val_mrr=%.4f", epoch, loss_val, val_mrr)
+            val_signal = val_metrics.get("ndcg@10", val_metrics.get("auc_roc", 0.0))
+            logger.info("Epoch %d — loss=%.4f, val_ndcg@10=%.4f", epoch, loss_val, val_signal)
 
-            # Early stopping
-            if val_mrr > best_val_mrr:
-                best_val_mrr = val_mrr
+            # Early stopping on continuous metric (ndcg@10 or auc_roc) instead of mrr
+            # MRR is binary with small val set (only 2 positive pairs), making early stopping unreliable
+            if val_signal > best_val_signal:
+                best_val_signal = val_signal
                 best_state = copy.deepcopy(model.state_dict())
                 result.best_epoch = epoch
                 patience_counter = 0

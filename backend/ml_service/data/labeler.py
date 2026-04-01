@@ -72,9 +72,9 @@ class PairLabeler:
                 clust_cov = cluster_coverage(effective_skills, clusters) if clusters else 0.0
 
                 is_positive = (
-                    (direct_overlap >= 0.5 and dist <= 1)
+                    (direct_overlap >= 0.4 and dist <= 1)
                     or (clust_cov >= 0.6 and dist <= 1)
-                    or (expanded_overlap >= 0.6 and dist <= 1 and direct_overlap < 0.5)
+                    or (expanded_overlap >= 0.55 and dist <= 1 and direct_overlap < 0.4)
                 )
 
                 if is_positive:
@@ -162,11 +162,18 @@ class PairLabeler:
 
     @staticmethod
     def _skill_overlap_effective(effective_skills: set[str], job: JobData) -> float:
-        """Fraction of job-required skills present in effective CV skills."""
+        """Fraction of shared skills, normalized by min set size (Sørensen-Dice).
+
+        Uses min(|CV|, |JD|) as denominator to remove bias towards verbose JDs.
+        LinkedIn JDs often list 12-20 skills; without this, well-matched CVs
+        with fewer skills would score low overlap and be incorrectly labeled negative.
+        """
         if not job.skills:
             return 0.0
         job_set = set(job.skills)
-        return len(effective_skills & job_set) / len(job_set)
+        intersection = len(effective_skills & job_set)
+        denom = min(len(effective_skills), len(job_set))
+        return intersection / denom if denom > 0 else 0.0
 
     @staticmethod
     def _seniority_distance(cv: CVData, job: JobData) -> int:
