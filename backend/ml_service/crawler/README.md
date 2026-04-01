@@ -235,25 +235,24 @@ Bước 3: Crawl
 from ml_service.crawler import get_provider
 
 roles = [
-    'frontend developer',
-    'backend developer',
-    'fullstack developer',
-    'react developer',
-    'python developer',
-    'java developer',
-    'nodejs developer',
-    'devops engineer',
-    'data engineer',
-    'software engineer',
-    'mobile developer',
-    'cloud engineer',
-    'AI engineer',
-    'QA engineer',
-    'machine learning engineer',
+    'frontend',
+    'backend',
+    'fullstack',
+    'react',
+    'python',
+    'java',
+    'nodejs',
+    'devops',
+    'data',
+    'software',
+    'mobile',
+    'cloud',
+    'AI',
+    'QA',
+    'machine learning',
 ]
 
 locations = [
-    'Vietnam',
     'United States',
     'Canada',
     'Finland',
@@ -269,7 +268,7 @@ total = 0
 
 for query, location in queries:
     try:
-        jobs = p.fetch(query, location=location, results_wanted=60)
+        jobs = p.fetch(query, location=location, results_wanted=100)
         total += len(jobs)
         print(f'  {query:30s} ({location:12s}) -> {len(jobs)} jobs, total={total}')
     except Exception as e:
