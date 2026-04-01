@@ -234,57 +234,52 @@ Bước 3: Crawl
 .venv/bin/python -c "
 from ml_service.crawler import get_provider
 
-queries = [
-    # Vietnam market
-    ('frontend developer', 'Vietnam'),
-    ('backend developer', 'Vietnam'),
-    ('fullstack developer', 'Vietnam'),
-    ('react developer', 'Vietnam'),
-    ('vuejs developer', 'Vietnam'),
-    ('nodejs developer', 'Vietnam'),
-    ('python developer', 'Vietnam'),
-    ('java developer', 'Vietnam'),
-    ('devops engineer', 'Vietnam'),
-    ('data engineer', 'Vietnam'),
-    ('software engineer', 'Vietnam'),
-    ('mobile developer', 'Vietnam'),
-    ('QA engineer', 'Vietnam'),
-    ('AI engineer', 'Vietnam'),
-    ('cloud engineer', 'Vietnam'),
-    # Remote
-    ('frontend developer', 'Remote'),
-    ('react developer', 'Remote'),
-    ('vuejs developer', 'Remote'),
-    ('fullstack developer', 'Remote'),
-    ('typescript developer', 'Remote'),
-    ('python developer', 'Remote'),
-    ('nodejs developer', 'Remote'),
-    ('devops engineer', 'Remote'),
-    ('data engineer', 'Remote'),
-    ('software engineer', 'Remote'),
-    ('machine learning engineer', 'Remote'),
-    ('mobile developer', 'Remote'),
-    ('golang developer', 'Remote'),
-    ('rust developer', 'Remote'),
-    ('cloud engineer', 'Remote'),
+roles = [
+    'frontend developer',
+    'backend developer',
+    'fullstack developer',
+    'react developer',
+    'python developer',
+    'java developer',
+    'nodejs developer',
+    'devops engineer',
+    'data engineer',
+    'software engineer',
+    'mobile developer',
+    'cloud engineer',
+    'AI engineer',
+    'QA engineer',
+    'machine learning engineer',
 ]
+
+locations = [
+    'Vietnam',
+    'United States',
+    'Canada',
+    'Finland',
+    'Australia',
+    'Singapore',
+]
+
+queries = [(role, loc) for loc in locations for role in roles]
+print(f'Total queries: {len(queries)} ({len(roles)} roles × {len(locations)} locations)')
 
 p = get_provider('linkedin', headless=True, save_path='data/raw_jobs.jsonl')
 total = 0
 
 for query, location in queries:
     try:
-        jobs = p.fetch(query, location=location, results_wanted=170)
+        jobs = p.fetch(query, location=location, results_wanted=60)
         total += len(jobs)
-        print(f'  {query:30s} ({location:8s}) -> {len(jobs)} jobs, total={total}')
+        print(f'  {query:30s} ({location:12s}) -> {len(jobs)} jobs, total={total}')
     except Exception as e:
-        print(f'  {query:30s} ({location:8s}) -> FAILED: {e}')
+        print(f'  {query:30s} ({location:12s}) -> FAILED: {e}')
 
 print(f'\nDone: {total} jobs crawled')
 "
-30 queries × 170 results = target ~5,100. Sau dedup sẽ còn ~3,000-4,000 unique.
+15 roles × 6 locations × 60 results = target ~5,400. Sau dedup sẽ còn ~3,000-4,000 unique.
 
-Thời gian ước tính: ~30-45 phút (LinkedIn rate limiting + Playwright).
+Thời gian ước tính: ~60-90 phút (LinkedIn rate limiting + Playwright).
 
 Bước 4: Sau khi crawl xong — clean + import DB
 
