@@ -53,9 +53,9 @@ TRAIN_CONFIG = TrainConfig(
     weight_decay=1e-5,
     epochs=300,
     patience=80,
-    hybrid_alpha=0.55,
-    hybrid_beta=0.30,
-    hybrid_gamma=0.15,
+    hybrid_alpha=0.55,  # Original (balanced GNN + skills)
+    hybrid_beta=0.30,   # Original
+    hybrid_gamma=0.15,  # Original
 )
 
 

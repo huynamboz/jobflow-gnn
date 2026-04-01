@@ -209,7 +209,7 @@ class InferenceEngine:
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_k]
 
-    def match_cv(self, cv: CVData, top_k: int = 10, retrieve_n: int = 50) -> list[JobMatchResult]:
+    def match_cv(self, cv: CVData, top_k: int = 10, retrieve_n: int = 150) -> list[JobMatchResult]:
         """Two-stage matching: CV against all Jobs.
 
         Stage 1 (Retrieve): Fast hybrid scoring → top N candidates
