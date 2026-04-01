@@ -235,11 +235,17 @@ class InferenceEngine:
             self._feature_extractor.set_stage1_context(
                 [(self._jobs[idx].job_id, s) for idx, s in candidates]
             )
+            # Compute GNN scores for each candidate to pass to reranker
+            gnn_scores_for_candidates = [
+                self._gnn_score_for_job(cv, self._jobs[idx])
+                for idx in cand_indices
+            ]
             rerank_probs = self._reranker.score_batch(
                 [cv] * len(cand_indices),
                 self._jobs,
                 list(range(len(cand_indices))),
                 cand_indices,
+                gnn_scores=gnn_scores_for_candidates,
             )
             # Sort by reranker probability (ordering) but keep stage1 score (display)
             reranked = sorted(

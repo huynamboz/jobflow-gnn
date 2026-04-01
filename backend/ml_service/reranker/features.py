@@ -65,8 +65,13 @@ class FeatureExtractor:
         sorted_by_score = sorted(scores, key=lambda x: -x[1])
         self._stage1_ranks = {idx: rank for rank, (idx, _) in enumerate(sorted_by_score)}
 
-    def extract(self, cv: CVData, job: JobData) -> np.ndarray:
-        """Extract feature vector for a single (CV, Job) pair."""
+    def extract(self, cv: CVData, job: JobData, *, gnn_score: float = 0.0) -> np.ndarray:
+        """Extract feature vector for a single (CV, Job) pair.
+
+        Args:
+            cv, job: CV and Job data
+            gnn_score: Actual GNN decode score (0-1). Default 0.0 for backward compat.
+        """
         cv_set = set(cv.skills)
         job_set = set(job.skills)
         union = cv_set | job_set
@@ -146,17 +151,28 @@ class FeatureExtractor:
             sen_dist, sen_score,
             role_pen, exp_years, cv_skill_count,
             specificity, tool_ratio,
-            stage1_score, text_sim,  # gnn_score ≈ text_sim in current impl
+            stage1_score, gnn_score,  # Actual GNN decode score
             gnn_rank, must_have_triggered, edge_penalty,
         ], dtype=np.float32)
 
     def extract_batch(
         self, cvs: list[CVData], jobs: list[JobData],
         cv_indices: list[int], job_indices: list[int],
+        gnn_scores: list[float] | None = None,
     ) -> np.ndarray:
-        """Extract features for multiple pairs with batched text encoding."""
+        """Extract features for multiple pairs with batched text encoding.
+
+        Args:
+            cvs, jobs: Lists of CVs and Jobs
+            cv_indices, job_indices: Indices of pairs to extract
+            gnn_scores: Optional list of GNN decode scores (one per pair).
+                       If None, defaults to 0.0 for each pair.
+        """
         if not cv_indices:
             return np.empty((0, len(self.FEATURE_NAMES)))
+
+        if gnn_scores is None:
+            gnn_scores = [0.0] * len(cv_indices)
 
         # Pre-encode all unique texts in one batch (avoid 10K+ individual calls)
         unique_cv_idx = sorted(set(cv_indices))
@@ -172,16 +188,21 @@ class FeatureExtractor:
 
         # Extract features using cached vectors
         features = []
-        for ci, ji in zip(cv_indices, job_indices):
-            f = self._extract_with_cache(cvs[ci], jobs[ji], cv_vec_map[ci], job_vec_map[ji])
+        for ci, ji, gs in zip(cv_indices, job_indices, gnn_scores):
+            f = self._extract_with_cache(cvs[ci], jobs[ji], cv_vec_map[ci], job_vec_map[ji], gnn_score=gs)
             features.append(f)
         return np.array(features, dtype=np.float32)
 
     def _extract_with_cache(
         self, cv: CVData, job: JobData,
         cv_vec: np.ndarray, job_vec: np.ndarray,
+        *, gnn_score: float = 0.0,
     ) -> np.ndarray:
-        """Extract features using pre-computed text vectors."""
+        """Extract features using pre-computed text vectors.
+
+        Args:
+            gnn_score: Actual GNN decode score (0-1). Default 0.0 for backward compat.
+        """
         cv_set = set(cv.skills)
         job_set = set(job.skills)
         union = cv_set | job_set
@@ -242,7 +263,7 @@ class FeatureExtractor:
             sen_dist, sen_score,
             role_pen, cv.experience_years, len(cv_set),
             self._skill_specificity(cv_set), tool_ratio,
-            stage1_score, text_sim,
+            stage1_score, gnn_score,  # Actual GNN decode score
             gnn_rank, must_have_triggered, edge_penalty,
         ], dtype=np.float32)
 

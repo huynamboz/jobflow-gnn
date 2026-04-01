@@ -103,11 +103,15 @@ class Reranker:
                     accuracy, loss.item(), len(y))
         return {"accuracy": accuracy, "loss": loss.item(), "samples": len(y)}
 
-    def score(self, cv: CVData, job: JobData) -> float:
-        """Score a single (CV, Job) pair. Returns probability of match."""
+    def score(self, cv: CVData, job: JobData, *, gnn_score: float = 0.0) -> float:
+        """Score a single (CV, Job) pair. Returns probability of match.
+
+        Args:
+            gnn_score: GNN decode score for this pair (0-1). Default 0.0.
+        """
         if not self._trained or self._model is None:
             return 0.5
-        X = torch.from_numpy(self._fe.extract(cv, job).reshape(1, -1))
+        X = torch.from_numpy(self._fe.extract(cv, job, gnn_score=gnn_score).reshape(1, -1))
         self._model.eval()
         with torch.no_grad():
             prob = torch.sigmoid(self._model(X)).item()
@@ -119,11 +123,17 @@ class Reranker:
         jobs: list[JobData],
         cv_indices: list[int],
         job_indices: list[int],
+        gnn_scores: list[float] | None = None,
     ) -> np.ndarray:
-        """Score multiple pairs. Returns array of match probabilities."""
+        """Score multiple pairs. Returns array of match probabilities.
+
+        Args:
+            gnn_scores: Optional list of GNN decode scores (one per pair).
+                       If None, defaults to 0.0 for each pair.
+        """
         if not self._trained or self._model is None:
             return np.full(len(cv_indices), 0.5)
-        X = self._fe.extract_batch(cvs, jobs, cv_indices, job_indices)
+        X = self._fe.extract_batch(cvs, jobs, cv_indices, job_indices, gnn_scores=gnn_scores)
         if len(X) == 0:
             return np.array([])
         X_t = torch.from_numpy(X)
