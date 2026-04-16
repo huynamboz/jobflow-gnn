@@ -200,17 +200,44 @@
 
 ---
 
-# THÁNG 3 — TỰ ĐỘNG HÓA & HOÀN THIỆN HỆ THỐNG (Tuần 9–12)
+# THÁNG 3 — CẢI THIỆN MÔ HÌNH & HOÀN THIỆN HỆ THỐNG (Tuần 9–12)
 
 ### Mục tiêu:
-- Pipeline end-to-end hoàn chỉnh
-- Tự động sinh email ứng tuyển và gửi
+- Nâng cao chất lượng mô hình GNN (AUC-ROC >= 0.80)
+- Pipeline end-to-end hoàn chỉnh: crawl → match → sinh email → gửi
 - Có demo & báo cáo hoàn chỉnh
+
+### Mục tiêu metrics cho demo:
+
+| Metric | Hiện tại | Mục tiêu | Ý nghĩa |
+|--------|----------|-----------|----------|
+| AUC-ROC | 0.71 | **0.80+** | Ngưỡng "tốt" trong ML |
+| NDCG@10 | 0.78 | **0.85+** | Ranking quality cao |
+| Precision@10 | 0.90 | **0.90+** | Giữ nguyên — đã tốt |
+| GNN vs Baselines | +15-21% | **+20%+** | Chứng minh GNN có giá trị |
 
 ---
 
-## Tuần 9 — Pipeline tự động matching
+## Tuần 9 — Cải thiện mô hình & Evaluation Protocol
 
+### 9.1. Per-CV Evaluation (Ưu tiên cao)
+- [ ] Implement per-CV evaluation: mỗi CV rank toàn bộ 6,020 jobs
+  - Tính Recall@K, NDCG@K, Precision@K riêng cho từng CV
+  - Lấy trung bình (macro-average) trên tất cả CV
+- [ ] So sánh kết quả per-CV evaluation với evaluation hiện tại
+- [ ] Phát hiện và phân tích các CV có kết quả kém (edge cases)
+  - Tìm pattern: thiếu skills? role hiếm? ít dữ liệu training?
+
+### 9.2. Hyperparameter Tuning
+- [ ] Grid search / random search trên các tham số:
+  - Hidden channels: 256 → thử 128, 384, 512
+  - Num GNN layers: 3 → thử 2, 4
+  - Learning rate: thử 1e-3, 5e-4, 1e-4
+  - Dropout rate: thử 0.1, 0.2, 0.3
+- [ ] So sánh HeteroGraphSAGE vs HeteroRGCN trên cùng dataset
+- [ ] Chọn bộ tham số tốt nhất dựa trên per-CV evaluation
+
+### 9.3. Pipeline tự động matching
 - [ ] Xây dựng pipeline tự động
   - Crawl job mới hàng ngày
   - Tự động chạy GNN matching cho tất cả CV đang active
@@ -219,8 +246,6 @@
   - Score >= 0.8: highly recommended
   - Score 0.5–0.8: potential match
   - Score < 0.5: not recommended
-- [ ] Notification system
-  - Thông báo khi có job mới phù hợp
 
 ---
 
@@ -241,8 +266,9 @@
 
 ---
 
-## Tuần 11 — Module tự động gửi email ứng tuyển (Auto Apply)
+## Tuần 11 — Module tự động gửi email + Giao diện người dùng
 
+### 11.1. Auto Send Email
 - [ ] Tích hợp SMTP để gửi email
   - Hỗ trợ Gmail, Outlook
   - Đính kèm CV (PDF)
@@ -250,32 +276,33 @@
   - Celery task queue cho việc gửi email
   - Rate limiting (tránh bị đánh dấu spam)
   - Retry mechanism cho email thất bại
-- [ ] Lập lịch tự động
-  - Hàng ngày: crawl → match → generate email → send
-  - Configurable schedule
 - [ ] Tracking & logging
-  - Trạng thái email: sent, delivered, opened (nếu có tracking pixel)
+  - Trạng thái email: sent, delivered, opened
   - Lịch sử ứng tuyển theo CV
+
+### 11.2. Giao diện người dùng
+- [ ] Xây dựng giao diện web (React)
+  - Upload CV
+  - Xem danh sách job đã crawl
+  - Xem kết quả matching (score + matched skills giải thích)
+  - Xem & chỉnh sửa email trước khi gửi
+  - Dashboard: số job crawled, số email sent, match rate
+- [ ] So sánh trực quan GNN vs Baselines trên cùng CV (cho demo)
 
 ---
 
-## Tuần 12 — Giao diện người dùng, Demo & Báo cáo
+## Tuần 12 — Demo & Báo cáo
 
-- [ ] Xây dựng giao diện web (Streamlit hoặc React)
-  - Upload CV
-  - Xem danh sách job đã crawl
-  - Xem kết quả matching (score + giải thích)
-  - Xem & chỉnh sửa email trước khi gửi
-  - Dashboard: số job crawled, số email sent, match rate
 - [ ] Chuẩn bị demo
   - Flow hoàn chỉnh: Upload CV → Auto Match → Generate Email → Send
+  - Demo so sánh: GNN vs Cosine vs BM25 trên cùng CV
   - Video demo hoặc live demo
 - [ ] Viết báo cáo đồ án
   - Chương 1: Giới thiệu đề tài, mục tiêu, phạm vi
   - Chương 2: Cơ sở lý thuyết (GNN, GraphSAGE, NLP, Email Automation)
   - Chương 3: Phân tích & thiết kế hệ thống
   - Chương 4: Triển khai & thực nghiệm
-  - Chương 5: Kết quả & đánh giá
+  - Chương 5: Kết quả & đánh giá (bao gồm per-CV evaluation, so sánh baselines)
   - Chương 6: Kết luận & hướng phát triển
 
 ---
