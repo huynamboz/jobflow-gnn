@@ -24,6 +24,14 @@ from ml_service.models.losses import bpr_loss
 logger = logging.getLogger(__name__)
 
 
+def _get_device() -> torch.device:
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    # MPS (Apple Silicon) is slower than CPU for small heterogeneous graphs
+    # due to op overhead — skip it and fall through to CPU.
+    return torch.device("cpu")
+
+
 @dataclass
 class TrainConfig:
     model_type: str = "graphsage"  # "graphsage" or "rgcn"
@@ -33,6 +41,9 @@ class TrainConfig:
     weight_decay: float = 1e-5
     epochs: int = 50
     patience: int = 10
+    drop_edge_rate: float = 0.0  # DropEdge (ICLR 2020): fraction of edges to drop per train iter
+    full_space_neg: bool = True  # BPR standard: sample negatives from full job space, not just labeled
+    warmup_epochs: int = 0       # skip early stopping for first N epochs (avoids curriculum transition dip)
     hybrid_alpha: float = 0.6
     hybrid_beta: float = 0.3
     hybrid_gamma: float = 0.1
@@ -44,6 +55,8 @@ class TrainResult:
     train_losses: list[float] = field(default_factory=list)
     val_metrics_history: list[dict[str, float]] = field(default_factory=list)
     test_metrics: dict[str, float] = field(default_factory=dict)
+    model: HeteroGraphSAGE | None = None  # trained model (best checkpoint)
+    data_clean: HeteroData | None = None  # graph data (label edges stripped)
 
 
 def _strip_label_edges(data: HeteroData) -> HeteroData:
@@ -64,6 +77,7 @@ def _sample_bpr_pairs(
     num_jobs: int,
     *,
     hard_neg_ratio: float = 0.7,
+    full_space_neg: bool = True,
     cvs: list[CVData] | None = None,
     jobs: list[JobData] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -127,11 +141,21 @@ def _sample_bpr_pairs(
         hard_negs = hard_neg_by_cv.get(cv_id, [])
         easy_negs = easy_neg_by_cv.get(cv_id, [])
         all_negs = hard_negs + easy_negs
+        pos_job_set = set(pos_jobs)  # known positive job indices for this CV
 
         for pos_job in pos_jobs:
-            # Prefer hard negatives with probability hard_neg_ratio
             if hard_negs and rng.random() < hard_neg_ratio:
+                # Hard neg: domain-specific difficult cases from labeled set
                 neg_job = hard_negs[rng.randint(0, len(hard_negs))]
+            elif full_space_neg:
+                # BPR standard: sample uniformly from entire job catalog.
+                # This trains the model to rank positives above ALL jobs,
+                # not just the 0.44% that were labeled — directly optimizes
+                # the per-CV full-ranking objective.
+                for _ in range(10):
+                    neg_job = rng.randint(0, num_jobs)
+                    if neg_job not in pos_job_set:
+                        break
             elif all_negs:
                 neg_job = all_negs[rng.randint(0, len(all_negs))]
             else:
@@ -154,11 +178,41 @@ def _seniority_match_score(cv: CVData, job: JobData) -> float:
     return max(0.0, 1.0 - dist * 0.25)
 
 
+def _apply_drop_edge(data: HeteroData, rate: float, rng: np.random.RandomState) -> HeteroData:
+    """Randomly drop edges per training iteration (DropEdge, ICLR 2020)."""
+    if rate <= 0.0:
+        return data
+    data = copy.copy(data)
+    for edge_type in data.edge_types:
+        ei = data[edge_type].edge_index
+        num_edges = ei.shape[1]
+        if num_edges == 0:
+            continue
+        keep = torch.from_numpy(rng.random(num_edges) >= rate)
+        data[edge_type].edge_index = ei[:, keep]
+        ea = getattr(data[edge_type], "edge_attr", None)
+        if ea is not None:
+            data[edge_type].edge_attr = ea[keep]
+    return data
+
+
+def _curriculum_hard_neg_ratio(epoch: int) -> float:
+    """Curriculum schedule: start easy, ramp up hard negatives over training."""
+    if epoch < 5:
+        return 0.0
+    elif epoch < 20:
+        return 0.3
+    else:
+        return 0.7
+
+
 class Trainer:
     """BPR training loop with early stopping and hybrid scoring evaluation."""
 
     def __init__(self, config: TrainConfig | None = None) -> None:
         self.config = config or TrainConfig()
+        self._device = _get_device()
+        logger.info("Device: %s", self._device)
 
     def train(
         self,
@@ -174,9 +228,12 @@ class Trainer:
         cv_id_to_idx = {cv.cv_id: i for i, cv in enumerate(cvs)}
         job_id_to_idx = {job.job_id: i for i, job in enumerate(jobs)}
 
+        device = self._device
+
         # Strip label edges and prepare data for GNN
         data_clean = _strip_label_edges(data)
         data_clean = prepare_data_for_gnn(data_clean)
+        data_clean = data_clean.to(device)
 
         # Build model
         metadata = data_clean.metadata()
@@ -192,18 +249,34 @@ class Trainer:
                 hidden_channels=cfg.hidden_channels,
                 num_layers=cfg.num_layers,
             )
+        model = model.to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
 
         result = TrainResult()
-        best_val_signal = -1.0
+        best_val_signal = -float("inf")
         patience_counter = 0
         best_state = None
+
+        # Pre-generate val BPR negatives once — fixed across all epochs so val_bpr
+        # is deterministic (no noise from re-sampling different negatives each epoch).
+        val_rng = np.random.RandomState(99)
+        val_cv_idx_fixed, val_pos_idx_fixed, val_neg_idx_fixed = _sample_bpr_pairs(
+            dataset.val, val_rng, cv_id_to_idx, job_id_to_idx, len(jobs),
+            hard_neg_ratio=0.0, full_space_neg=cfg.full_space_neg,
+            cvs=None, jobs=None,
+        )
+        val_cv_idx_fixed = val_cv_idx_fixed.to(device)
+        val_pos_idx_fixed = val_pos_idx_fixed.to(device)
+        val_neg_idx_fixed = val_neg_idx_fixed.to(device)
 
         for epoch in range(cfg.epochs):
             # --- Train ---
             model.train()
+            hard_neg_ratio = _curriculum_hard_neg_ratio(epoch)
             cv_idx, pos_idx, neg_idx = _sample_bpr_pairs(
                 dataset.train, rng, cv_id_to_idx, job_id_to_idx, len(jobs),
+                hard_neg_ratio=hard_neg_ratio,
+                full_space_neg=cfg.full_space_neg,
                 cvs=cvs, jobs=jobs,
             )
             if len(cv_idx) == 0:
@@ -212,7 +285,12 @@ class Trainer:
                 result.val_metrics_history.append({})
                 continue
 
-            z_dict = model.encode(data_clean)
+            cv_idx = cv_idx.to(device)
+            pos_idx = pos_idx.to(device)
+            neg_idx = neg_idx.to(device)
+
+            train_data = _apply_drop_edge(data_clean, cfg.drop_edge_rate, rng)
+            z_dict = model.encode(train_data)
             pos_scores = model.decode(z_dict, cv_idx, pos_idx)
             neg_scores = model.decode(z_dict, cv_idx, neg_idx)
             loss = bpr_loss(pos_scores, neg_scores)
@@ -227,22 +305,39 @@ class Trainer:
             # --- Validate ---
             model.eval()
             with torch.no_grad():
+                # Val BPR loss with fixed negatives (pre-generated before training loop).
+                # Fixed negatives make val_bpr deterministic across epochs — no noise
+                # from re-sampling different random negatives each epoch.
+                if len(val_cv_idx_fixed) > 0:
+                    z_val = model.encode(data_clean)
+                    val_pos_s = model.decode(z_val, val_cv_idx_fixed, val_pos_idx_fixed)
+                    val_neg_s = model.decode(z_val, val_cv_idx_fixed, val_neg_idx_fixed)
+                    val_bpr = bpr_loss(val_pos_s, val_neg_s).item()
+                else:
+                    val_bpr = float("inf")
+
                 val_metrics = self._evaluate_split(
                     model, data_clean, dataset.val, cvs, jobs, cv_id_to_idx, job_id_to_idx
                 )
             result.val_metrics_history.append(val_metrics)
 
-            val_signal = val_metrics.get("ndcg@10", val_metrics.get("auc_roc", 0.0))
-            logger.info("Epoch %d — loss=%.4f, val_ndcg@10=%.4f", epoch, loss_val, val_signal)
+            val_auc = val_metrics.get("auc_roc", 0.0)
+            val_ndcg = val_metrics.get("ndcg@10", 0.0)
+            # val_bpr logged for diagnostics; val_auc used as early stopping signal.
+            # warmup_epochs skips patience counting during curriculum transition
+            # (epoch 5-20 often shows a temporary val_auc dip when hard negs kick in).
+            val_signal = val_auc
+            logger.info(
+                "Epoch %d — loss=%.4f, val_bpr=%.4f, val_auc=%.4f, val_ndcg@10=%.4f",
+                epoch, loss_val, val_bpr, val_auc, val_ndcg,
+            )
 
-            # Early stopping on continuous metric (ndcg@10 or auc_roc) instead of mrr
-            # MRR is binary with small val set (only 2 positive pairs), making early stopping unreliable
             if val_signal > best_val_signal:
                 best_val_signal = val_signal
                 best_state = copy.deepcopy(model.state_dict())
                 result.best_epoch = epoch
                 patience_counter = 0
-            else:
+            elif epoch >= cfg.warmup_epochs:
                 patience_counter += 1
                 if patience_counter >= cfg.patience:
                     logger.info("Early stopping at epoch %d", epoch)
@@ -256,6 +351,10 @@ class Trainer:
             result.test_metrics = self._evaluate_split(
                 model, data_clean, dataset.test, cvs, jobs, cv_id_to_idx, job_id_to_idx
             )
+
+        # Store model and data for downstream use (e.g. per-CV evaluation)
+        result.model = model
+        result.data_clean = data_clean
 
         return result
 
@@ -290,8 +389,9 @@ class Trainer:
         if not valid_pairs:
             return {}
 
-        cv_idx_t = torch.tensor(cv_indices, dtype=torch.long)
-        job_idx_t = torch.tensor(job_indices, dtype=torch.long)
+        device = self._device
+        cv_idx_t = torch.tensor(cv_indices, dtype=torch.long).to(device)
+        job_idx_t = torch.tensor(job_indices, dtype=torch.long).to(device)
 
         # GNN scores (min-max normalized to [0, 1])
         z_dict = model.encode(data)
@@ -319,3 +419,112 @@ class Trainer:
 
         y_true = np.array([p.label for p in valid_pairs])
         return compute_all_metrics(y_true, hybrid)
+
+
+def make_gnn_hybrid_scorer(
+    model: HeteroGraphSAGE,
+    data_clean: HeteroData,
+    cvs: list[CVData],
+    jobs: list[JobData],
+    config: TrainConfig,
+):
+    """Create batch and single scoring functions using GNN hybrid scoring.
+
+    Pre-computes GNN embeddings once, then each call only does:
+      decode (MLP forward) + skill overlap + seniority match.
+
+    Returns:
+        batch_score_fn: (cv: CVData, jobs: list[JobData]) -> np.ndarray
+            Scores all jobs for one CV with per-CV min-max normalization.
+        score_fn: (cv: CVData, job: JobData) -> float
+            Single-pair scoring with sigmoid normalization (for compatibility).
+
+    Args:
+        model: Trained GNN model.
+        data_clean: Graph data with label edges already stripped and prepared
+                    (as returned by TrainResult.data_clean).
+    """
+    cv_id_to_idx = {cv.cv_id: i for i, cv in enumerate(cvs)}
+    job_id_to_idx = {job.job_id: i for i, job in enumerate(jobs)}
+
+    device = next(model.parameters()).device
+    model.eval()
+    with torch.no_grad():
+        z_dict = model.encode(data_clean)
+
+    skill_scorer = SkillOverlapScorer()
+
+    def batch_score_fn(cv: CVData, candidate_jobs: list[JobData]) -> np.ndarray:
+        """Score all candidate jobs for one CV with min-max normalization."""
+        ci = cv_id_to_idx.get(cv.cv_id)
+        if ci is None:
+            return np.zeros(len(candidate_jobs))
+
+        # Batch GNN decode
+        job_indices = []
+        valid_mask = []
+        for j in candidate_jobs:
+            ji = job_id_to_idx.get(j.job_id)
+            if ji is not None:
+                job_indices.append(ji)
+                valid_mask.append(True)
+            else:
+                job_indices.append(0)  # placeholder
+                valid_mask.append(False)
+
+        with torch.no_grad():
+            cv_idx_t = torch.full((len(job_indices),), ci, dtype=torch.long, device=device)
+            job_idx_t = torch.tensor(job_indices, dtype=torch.long, device=device)
+            gnn_raw = model.decode(z_dict, cv_idx_t, job_idx_t).cpu().numpy()
+
+        # Min-max normalize GNN scores per-CV (same as training evaluation)
+        valid_scores = gnn_raw[valid_mask] if any(valid_mask) else gnn_raw
+        gnn_min, gnn_max = valid_scores.min(), valid_scores.max()
+        if gnn_max - gnn_min > 1e-8:
+            gnn_norm = (gnn_raw - gnn_min) / (gnn_max - gnn_min)
+        else:
+            gnn_norm = np.full_like(gnn_raw, 0.5)
+
+        # Skill overlap and seniority scores
+        skill_scores = np.array([skill_scorer.score(cv, j) for j in candidate_jobs])
+        seniority_scores = np.array([_seniority_match_score(cv, j) for j in candidate_jobs])
+
+        # Hybrid combination
+        hybrid = (
+            config.hybrid_alpha * gnn_norm
+            + config.hybrid_beta * skill_scores
+            + config.hybrid_gamma * seniority_scores
+        )
+
+        # Zero out invalid jobs
+        for i, valid in enumerate(valid_mask):
+            if not valid:
+                hybrid[i] = 0.0
+
+        return hybrid
+
+    def score_fn(cv: CVData, job: JobData) -> float:
+        """Single-pair scoring (uses sigmoid normalization)."""
+        ci = cv_id_to_idx.get(cv.cv_id)
+        ji = job_id_to_idx.get(job.job_id)
+        if ci is None or ji is None:
+            return 0.0
+
+        with torch.no_grad():
+            raw = model.decode(
+                z_dict,
+                torch.tensor([ci], dtype=torch.long, device=device),
+                torch.tensor([ji], dtype=torch.long, device=device),
+            )
+            gnn_score = torch.sigmoid(raw).item()
+
+        skill_score = skill_scorer.score(cv, job)
+        seniority_score = _seniority_match_score(cv, job)
+
+        return (
+            config.hybrid_alpha * gnn_score
+            + config.hybrid_beta * skill_score
+            + config.hybrid_gamma * seniority_score
+        )
+
+    return batch_score_fn, score_fn

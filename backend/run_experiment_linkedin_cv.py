@@ -9,7 +9,9 @@ Usage:
 from __future__ import annotations
 
 import logging
+import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -24,22 +26,52 @@ from ml_service.data.skill_extractor import SkillExtractor
 from ml_service.data.skill_normalization import SkillNormalizer
 from ml_service.embedding import get_provider
 from ml_service.evaluation.metrics import compute_all_metrics
+from ml_service.evaluation.per_cv_evaluator import PerCVEvaluator, print_per_cv_results
 from ml_service.graph.builder import GraphBuilder
 from ml_service.graph.schema import JobData
-from ml_service.training.trainer import Trainer, TrainConfig
+from ml_service.graph.schema import LabeledPair
+from ml_service.training.trainer import Trainer, TrainConfig, make_gnn_hybrid_scorer
+
+_LOG_DIR = Path("logs")
+_LOG_DIR.mkdir(exist_ok=True)
+_LOG_FILE = _LOG_DIR / f"linkedin_cv_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+_log_fh = open(_LOG_FILE, "w", encoding="utf-8", buffering=1)  # line-buffered
+
+
+class _Tee:
+    """Write to both stdout and log file so print() is captured."""
+    def __init__(self, *streams):
+        self._streams = streams
+    def write(self, data):
+        for s in self._streams:
+            s.write(data)
+            s.flush()
+    def flush(self):
+        for s in self._streams:
+            s.flush()
+    def isatty(self):
+        return False
+
+
+sys.stdout = _Tee(sys.__stdout__, _log_fh)
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.__stdout__),
+        logging.StreamHandler(_log_fh),  # reuse same handle, no race condition
+    ],
 )
 logger = logging.getLogger("experiment_linkedin")
+logger.info("Log file: %s", _LOG_FILE.resolve())
 
 DATASET_DIR = Path("/Users/huynam/Documents/PROJECT/jobflow-gnn/Dataset")
 RAW_JOBS_PATH = Path("data/raw_jobs.jsonl")
 SKILL_ALIAS_PATH = "ml_service/data/skill-alias.json"
 
-NUM_POSITIVE_PAIRS = 2000
-NOISE_RATE = 0.10
+NUM_POSITIVE_PAIRS = 3500
+NOISE_RATE = 0.05
 SEED = 42
 
 TRAIN_CONFIG = TrainConfig(
@@ -50,10 +82,41 @@ TRAIN_CONFIG = TrainConfig(
     weight_decay=1e-5,
     epochs=300,
     patience=50,
+    warmup_epochs=30,
+    drop_edge_rate=0.2,
     hybrid_alpha=0.55,
     hybrid_beta=0.30,
     hybrid_gamma=0.15,
 )
+
+
+def _generate_pseudo_pairs(
+    cvs, jobs,
+    existing_pos_ids: set[tuple[int, int]],
+    top_k: int = 30,
+    min_overlap: float = 0.25,
+) -> list[LabeledPair]:
+    """Pseudo-positive pairs using Skill Overlap as teacher signal (Fix 2).
+
+    For each CV, rank all jobs by Skill Overlap and take top-K as pseudo-positives.
+    This expands training coverage from 0.44% → ~30x more, teaching the GNN to
+    rank skill-matched jobs above unrelated ones across the full job space.
+    Only added to training set — test/val stay unchanged.
+    """
+    from ml_service.baselines.skill_overlap import SkillOverlapScorer
+    scorer = SkillOverlapScorer()
+    pseudo: list[LabeledPair] = []
+    for cv in cvs:
+        candidates = []
+        for job in jobs:
+            s = scorer.score(cv, job)
+            if s >= min_overlap:
+                candidates.append((job.job_id, s))
+        candidates.sort(key=lambda x: -x[1])
+        for job_id, _ in candidates[:top_k]:
+            if (cv.cv_id, job_id) not in existing_pos_ids:
+                pseudo.append(LabeledPair(cv_id=cv.cv_id, job_id=job_id, label=1, split="train"))
+    return pseudo
 
 
 def _print_header(title):
@@ -153,6 +216,13 @@ def main():
     logger.info("Pairs: %d (pos=%d, neg=%d)", len(pairs), n_pos, n_neg)
     logger.info("Split: train=%d, val=%d, test=%d", len(dataset.train), len(dataset.val), len(dataset.test))
 
+    # Fix 2: Pseudo-positive expansion — add Skill Overlap top-K to train only
+    # Test/val remain clean (proxy-labeled ground truth only)
+    existing_pos_ids = {(p.cv_id, p.job_id) for p in pairs if p.label == 1}
+    pseudo_pairs = _generate_pseudo_pairs(cvs, jobs, existing_pos_ids, top_k=30, min_overlap=0.25)
+    dataset.train.extend(pseudo_pairs)
+    logger.info("Pseudo-positive pairs added to train: %d (total train: %d)", len(pseudo_pairs), len(dataset.train))
+
     # --- Step 4: Build graph ---
     _print_header("Step 4: Build graph")
     provider = get_provider()
@@ -185,8 +255,8 @@ def main():
     bm25.fit(cvs)
     bm25_m = _evaluate_baseline("BM25", bm25, dataset.test, cvs, jobs, cv_map, job_map)
 
-    # --- Step 7: Results ---
-    _print_header("Step 7: Results (Real JDs + LinkedIn CVs)")
+    # --- Step 7: Results (Global) ---
+    _print_header("Step 7: Results — Global Evaluation (Real JDs + LinkedIn CVs)")
     all_results = {
         "Cosine Similarity": cosine_m,
         "Skill Overlap (Jaccard)": skill_m,
@@ -194,6 +264,55 @@ def main():
         "GNN (Hybrid)": result.test_metrics,
     }
     _print_results_table(all_results)
+
+    # --- Step 8: Per-CV Evaluation (Full-ranking + 2-stage) ---
+    _print_header("Step 8: Per-CV Evaluation")
+    per_cv_eval = PerCVEvaluator(cvs, jobs, dataset, min_test_positives=1)
+    per_cv_ks = (10, 20, 50, 100)
+    gnn_batch_fn, _ = make_gnn_hybrid_scorer(result.model, result.data_clean, cvs, jobs, TRAIN_CONFIG)
+    skill_scorer = SkillOverlapScorer()
+
+    # 8a: Full-ranking baseline (each CV ranks ALL jobs) — honest upper-bound check
+    _print_header("Step 8a: Full-Ranking (all %d jobs)" % len(jobs))
+    gnn_full    = per_cv_eval.evaluate_batch(gnn_batch_fn, ks=per_cv_ks)
+    skill_full  = per_cv_eval.evaluate(skill_scorer, ks=per_cv_ks)
+    bm25_full   = per_cv_eval.evaluate(bm25, ks=per_cv_ks)
+    cosine_full = per_cv_eval.evaluate(CosineSimilarityScorer(provider), ks=per_cv_ks)
+
+    print_per_cv_results({
+        "Cosine (full)":         cosine_full,
+        "Skill Overlap (full)":  skill_full,
+        "BM25 (full)":           bm25_full,
+        "GNN (full)":            gnn_full,
+    }, ks=per_cv_ks)
+
+    # 8b: 2-stage pipeline — phản ánh đúng cách system hoạt động trong thực tế
+    # Stage 1: Skill Overlap retrieve top-100 → Stage 2: GNN re-rank
+    _print_header("Step 8b: 2-Stage Pipeline (Stage1=SkillOverlap top-100, Stage2=GNN)")
+    gnn_2stage = per_cv_eval.evaluate_twostage(
+        stage1_scorer=skill_scorer,
+        stage2_batch_fn=gnn_batch_fn,
+        retrieve_n=100,
+        ks=per_cv_ks,
+    )
+    skill_2stage = per_cv_eval.evaluate_twostage(
+        stage1_scorer=skill_scorer,
+        stage2_batch_fn=lambda cv, jobs: np.array([skill_scorer.score(cv, j) for j in jobs]),
+        retrieve_n=100,
+        ks=per_cv_ks,
+    )
+    bm25_2stage = per_cv_eval.evaluate_twostage(
+        stage1_scorer=skill_scorer,
+        stage2_batch_fn=lambda cv, jobs: np.array([bm25.score(cv, j) for j in jobs]),
+        retrieve_n=100,
+        ks=per_cv_ks,
+    )
+
+    print_per_cv_results({
+        "Skill Overlap (2-stage)": skill_2stage,
+        "BM25 (2-stage)":          bm25_2stage,
+        "GNN (2-stage)":           gnn_2stage,
+    }, ks=per_cv_ks)
 
     total_time = time.time() - t_start
     print(f"\nTotal time: {total_time:.1f}s")

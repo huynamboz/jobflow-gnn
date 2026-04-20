@@ -12,7 +12,9 @@ Usage:
 from __future__ import annotations
 
 import logging
+import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -27,15 +29,44 @@ from ml_service.data.labeler import PairLabeler
 from ml_service.data.skill_normalization import SkillNormalizer
 from ml_service.embedding import get_provider
 from ml_service.evaluation.metrics import compute_all_metrics
+from ml_service.evaluation.per_cv_evaluator import PerCVEvaluator, print_per_cv_results
 from ml_service.graph.builder import GraphBuilder
 from ml_service.graph.schema import JobData
-from ml_service.training.trainer import Trainer, TrainConfig
+from ml_service.training.trainer import Trainer, TrainConfig, make_gnn_hybrid_scorer
+
+_LOG_DIR = Path("logs")
+_LOG_DIR.mkdir(exist_ok=True)
+_LOG_FILE = _LOG_DIR / f"real_cv_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+_log_fh = open(_LOG_FILE, "w", encoding="utf-8", buffering=1)  # line-buffered
+
+
+class _Tee:
+    """Write to both stdout and log file so print() is captured."""
+    def __init__(self, *streams):
+        self._streams = streams
+    def write(self, data):
+        for s in self._streams:
+            s.write(data)
+            s.flush()
+    def flush(self):
+        for s in self._streams:
+            s.flush()
+    def isatty(self):
+        return False
+
+
+sys.stdout = _Tee(sys.__stdout__, _log_fh)
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.__stdout__),
+        logging.StreamHandler(_log_fh),  # reuse same handle, no race condition
+    ],
 )
 logger = logging.getLogger("experiment_real_cv")
+logger.info("Log file: %s", _LOG_FILE.resolve())
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -45,8 +76,8 @@ SKILL_ALIAS_PATH = "ml_service/data/skill-alias.json"
 CV_SOURCE = "datasetmaster"  # "datasetmaster" (4.8K) or "54k" (54K, IT-filtered)
 MAX_CVS = 1000      # cap CVs (full dataset = 4817)
 MAX_JOBS = None      # use all crawled JDs
-NUM_POSITIVE_PAIRS = 1500
-NOISE_RATE = 0.10
+NUM_POSITIVE_PAIRS = 3500
+NOISE_RATE = 0.05
 SEED = 42
 
 TRAIN_CONFIG = TrainConfig(
@@ -56,6 +87,7 @@ TRAIN_CONFIG = TrainConfig(
     weight_decay=1e-5,
     epochs=200,
     patience=30,
+    drop_edge_rate=0.2,
     hybrid_alpha=0.8,
     hybrid_beta=0.15,
     hybrid_gamma=0.05,
@@ -204,8 +236,8 @@ def main() -> None:
     bm25.fit(cvs)
     bm25_m = _evaluate_baseline("BM25", bm25, dataset.test, cvs, jobs, cv_map, job_map)
 
-    # ─── Step 7: Results ────────────────────────────────────────────────────
-    _print_header("Step 7: Results (Real JDs + Real CVs)")
+    # ─── Step 7: Results (Global) ────────────────────────────────────────────
+    _print_header("Step 7: Results — Global Evaluation (Real JDs + Real CVs)")
     all_results = {
         "Cosine Similarity": cosine_m,
         "Skill Overlap (Jaccard)": skill_m,
@@ -214,19 +246,38 @@ def main() -> None:
     }
     _print_results_table(all_results)
 
-    total_time = time.time() - t_start
-    print(f"\nTotal time: {total_time:.1f}s (training: {train_time:.1f}s)")
-    print(f"Data: {len(jobs)} real JDs (Indeed) + {len(cvs)} real CVs (Kaggle)")
-
     gnn_auc = result.test_metrics.get("auc_roc", 0.0)
     best_bl_auc = max(cosine_m.get("auc_roc", 0), skill_m.get("auc_roc", 0), bm25_m.get("auc_roc", 0))
-    diff = gnn_auc - best_bl_auc
-    print(f"\nGNN vs best baseline AUC-ROC: {diff:+.4f}")
+    print(f"\nGNN vs best baseline AUC-ROC: {gnn_auc - best_bl_auc:+.4f}")
 
     gnn_r10 = result.test_metrics.get("recall@10", 0.0)
     best_bl_r10 = max(cosine_m.get("recall@10", 0), skill_m.get("recall@10", 0), bm25_m.get("recall@10", 0))
-    diff_r = gnn_r10 - best_bl_r10
-    print(f"GNN vs best baseline Recall@10: {diff_r:+.4f}")
+    print(f"GNN vs best baseline Recall@10: {gnn_r10 - best_bl_r10:+.4f}")
+
+    # ─── Step 8: Per-CV Full-Ranking Evaluation ────────────────────────────
+    _print_header("Step 8: Per-CV Full-Ranking Evaluation")
+    logger.info("Running per-CV evaluation (each CV ranks ALL %d jobs)...", len(jobs))
+    per_cv_eval = PerCVEvaluator(cvs, jobs, dataset, min_test_positives=1)
+    per_cv_ks = (10, 20, 50, 100, 200)
+
+    gnn_batch_fn, _ = make_gnn_hybrid_scorer(result.model, result.data_clean, cvs, jobs, TRAIN_CONFIG)
+    gnn_per_cv = per_cv_eval.evaluate_batch(gnn_batch_fn, ks=per_cv_ks)
+
+    cosine_per_cv = per_cv_eval.evaluate(CosineSimilarityScorer(provider), ks=per_cv_ks)
+    skill_per_cv = per_cv_eval.evaluate(SkillOverlapScorer(), ks=per_cv_ks)
+    bm25_per_cv = per_cv_eval.evaluate(bm25, ks=per_cv_ks)
+
+    per_cv_results = {
+        "Cosine Similarity": cosine_per_cv,
+        "Skill Overlap (Jaccard)": skill_per_cv,
+        "BM25": bm25_per_cv,
+        "GNN (Hybrid)": gnn_per_cv,
+    }
+    print_per_cv_results(per_cv_results, ks=per_cv_ks)
+
+    total_time = time.time() - t_start
+    print(f"\nTotal time: {total_time:.1f}s (training: {train_time:.1f}s)")
+    print(f"Data: {len(jobs)} real JDs (Indeed) + {len(cvs)} real CVs (Kaggle)")
 
 
 if __name__ == "__main__":
