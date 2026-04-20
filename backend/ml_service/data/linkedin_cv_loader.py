@@ -97,3 +97,33 @@ def load_linkedin_cvs(
         len(cvs), dataset_dir, skipped, min_skills,
     )
     return cvs
+
+
+def load_linkedin_cvs_json(json_path: str | Path) -> list[CVData]:
+    """Load pre-extracted LinkedIn CVs from JSON (much faster than PDF parsing).
+
+    Use this instead of load_linkedin_cvs() when CVs have already been
+    extracted and saved via the extraction script.
+    """
+    import json
+
+    json_path = Path(json_path)
+    with open(json_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    from ml_service.graph.schema import EducationLevel, SeniorityLevel
+
+    cvs = []
+    for item in data:
+        cvs.append(CVData(
+            cv_id=item["cv_id"],
+            seniority=SeniorityLevel(item["seniority"]),
+            experience_years=item["experience_years"],
+            education=EducationLevel(item["education"]),
+            skills=tuple(item["skills"]),
+            skill_proficiencies=tuple(item["skill_proficiencies"]),
+            text=item["text"],
+        ))
+
+    logger.info("Loaded %d CVs from %s (JSON cache)", len(cvs), json_path)
+    return cvs

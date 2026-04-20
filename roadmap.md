@@ -220,28 +220,48 @@
 
 ## Tuần 9 — Cải thiện mô hình & Evaluation Protocol
 
-### 9.1. Per-CV Evaluation (Ưu tiên cao)
-- [ ] Implement per-CV evaluation: mỗi CV rank toàn bộ 6,020 jobs
+### 9.1. Per-CV Evaluation (Ưu tiên cao) ✅ Đã implement
+- [x] Implement per-CV evaluation: mỗi CV rank toàn bộ 6,020 jobs
   - Tính Recall@K, NDCG@K, Precision@K riêng cho từng CV
   - Lấy trung bình (macro-average) trên tất cả CV
-- [ ] So sánh kết quả per-CV evaluation với evaluation hiện tại
+- [ ] Chạy per-CV evaluation trên checkpoint hiện tại
+- [ ] So sánh kết quả per-CV evaluation với global evaluation
 - [ ] Phát hiện và phân tích các CV có kết quả kém (edge cases)
-  - Tìm pattern: thiếu skills? role hiếm? ít dữ liệu training?
 
-### 9.2. Hyperparameter Tuning
-- [ ] Grid search / random search trên các tham số:
-  - Hidden channels: 256 → thử 128, 384, 512
-  - Num GNN layers: 3 → thử 2, 4
-  - Learning rate: thử 1e-3, 5e-4, 1e-4
-  - Dropout rate: thử 0.1, 0.2, 0.3
-- [ ] So sánh HeteroGraphSAGE vs HeteroRGCN trên cùng dataset
-- [ ] Chọn bộ tham số tốt nhất dựa trên per-CV evaluation
+### 9.2. Cải thiện Data Pipeline ✅ Đã hoàn thành
+- [x] Fix CV parser cho LinkedIn PDF format (experience, education, seniority)
+- [x] Mở rộng skill catalog: 208 → 218 skills (+UX/UI, testing, BA, AI/ML terms)
+- [x] Re-extract 511 CVs (từ 362) với catalog mới
+- [x] Education distribution: COLLEGE 34% → 8%, BACHELOR 58% → 84%
 
-### 9.3. Pipeline tự động matching
-- [ ] Xây dựng pipeline tự động
-  - Crawl job mới hàng ngày
-  - Tự động chạy GNN matching cho tất cả CV đang active
-  - Ranking kết quả theo score giảm dần
+### 9.3. Cải thiện mô hình GNN
+
+> **Xem kế hoạch chi tiết:** [`roadmap/week9/plan/model-improvement.md`](week9/plan/model-improvement.md)
+
+Kế hoạch 2 giai đoạn để nâng AUC-ROC từ 0.71 lên 0.83+:
+
+**Phase 1 — Mức tốt (target AUC-ROC 0.78–0.82):**
+- [ ] **P1.1** Tăng NUM_POSITIVE_PAIRS lên 3,500 và giảm NOISE_RATE xuống 0.05
+- [ ] **P1.2** Hyperparameter grid search: hidden_channels, num_layers, lr, dropout
+- [ ] **P1.3** DropEdge regularization (drop 20% edges/epoch — ngăn overfitting)
+- [ ] **P1.4** Curriculum negative sampling (easy → hard theo epoch schedule)
+- [ ] **P1.5** Skill co-occurrence edges (PMI-weighted skill-to-skill từ job postings)
+
+**Phase 2 — Mức xuất sắc (target AUC-ROC 0.83–0.87):**
+- [ ] **P2.1** Thay BPR → InfoNCE loss (multi-negative contrastive, richer gradient signal)
+- [ ] **P2.2** Test HGT model (Heterogeneous Graph Transformer, relation-aware attention)
+- [ ] **P2.3** Nâng cấp text embeddings: MiniLM-L6 → nomic-embed-text-v1.5 (8K context)
+- [ ] **P2.4** GRACE contrastive pretraining (self-supervised trên unlabeled graph)
+
+**Metrics mục tiêu:**
+
+| Phase | AUC-ROC | NDCG@10 | Per-CV Recall@50 |
+|-------|---------|---------|-----------------|
+| Hiện tại | 0.71 | 0.78 | ~0.05 (ước tính) |
+| Phase 1 | 0.78–0.82 | 0.85+ | 0.10–0.15 |
+| Phase 2 | 0.83–0.87 | 0.90+ | 0.15–0.25 |
+
+### 9.4. Pipeline tự động matching
 - [ ] Thiết lập ngưỡng matching
   - Score >= 0.8: highly recommended
   - Score 0.5–0.8: potential match

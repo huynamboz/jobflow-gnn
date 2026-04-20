@@ -1,10 +1,11 @@
 """Parse CV from PDF/DOCX/text → CVData.
 
-Section-based parsing:
-  1. Split CV into sections (SKILLS, EXPERIENCE, PROJECTS, EDUCATION, etc.)
-  2. Extract skills from SKILLS section first (highest trust)
-  3. Supplement from EXPERIENCE/PROJECTS (medium trust, filter soft skills)
-  4. Infer seniority, experience years, education from respective sections
+Section-based parsing with LinkedIn PDF format support:
+  1. Detect LinkedIn format (has "Top Skills", "Contact" header)
+  2. Extract skills from "Top Skills" section + body text
+  3. Parse experience durations from "(N years M months)" patterns
+  4. Parse education from Education section specifically
+  5. Infer seniority from title line (first few lines)
 """
 
 from __future__ import annotations
@@ -29,16 +30,23 @@ _SENIORITY_PATTERNS: list[tuple[re.Pattern, SeniorityLevel]] = [
 
 _EDUCATION_PATTERNS: list[tuple[re.Pattern, EducationLevel]] = [
     (re.compile(r"\b(?:ph\.?d|doctorate)\b", re.I), EducationLevel.PHD),
-    (re.compile(r"\b(?:master|mba|m\.s\.|m\.tech|msc)\b", re.I), EducationLevel.MASTER),
-    (re.compile(r"\b(?:bachelor|b\.s\.|b\.tech|bsc|b\.e\.?)\b", re.I), EducationLevel.BACHELOR),
+    (re.compile(r"\b(?:master(?:'?s)?\s+(?:degree|of)|mba|m\.s\.|m\.tech|msc)\b", re.I), EducationLevel.MASTER),
+    (re.compile(r"\b(?:bachelor(?:'?s)?\s+(?:degree|of)|b\.s\.|b\.tech|bsc|b\.e\.?)\b", re.I), EducationLevel.BACHELOR),
     (re.compile(r"\b(?:diploma|associate|college)\b", re.I), EducationLevel.COLLEGE),
 ]
 
 _YEARS_PATTERN = re.compile(r"(\d+)\+?\s*(?:years?|yrs?)\s*(?:of\s+)?(?:experience)?", re.I)
 
+# LinkedIn duration pattern: "(2 years 6 months)" or "(1 year)" or "(6 months)"
+_LINKEDIN_DURATION = re.compile(
+    r"\((\d+)\s+years?\s*(?:(\d+)\s+months?)?\)|"
+    r"\((\d+)\s+months?\)",
+    re.I,
+)
+
 # Section header patterns (common CV section names)
 _SECTION_PATTERNS: dict[str, re.Pattern] = {
-    "skills": re.compile(r"^(?:SKILLS?|TECHNICAL\s+SKILLS?|CORE\s+COMPETENC|TECHNOLOGIES|TECH\s+STACK)", re.I | re.M),
+    "skills": re.compile(r"^(?:SKILLS?|TECHNICAL\s+SKILLS?|CORE\s+COMPETENC|TECHNOLOGIES|TECH\s+STACK|TOP\s+SKILLS)", re.I | re.M),
     "experience": re.compile(r"^(?:WORK\s+EXPERIENCE|EXPERIENCE|EMPLOYMENT|PROFESSIONAL\s+EXPERIENCE)", re.I | re.M),
     "projects": re.compile(r"^(?:PROJECTS?|PERSONAL\s+PROJECTS?|SIDE\s+PROJECTS?)", re.I | re.M),
     "education": re.compile(r"^(?:EDUCATION|ACADEMIC|QUALIFICATIONS)", re.I | re.M),
@@ -46,7 +54,6 @@ _SECTION_PATTERNS: dict[str, re.Pattern] = {
 }
 
 # Skills that should be excluded when found only in project/experience context
-# (too vague or likely false positives from descriptive text)
 _CONTEXT_ONLY_SKILLS = {
     "security", "problem_solving", "communication", "teamwork",
     "leadership", "time_management", "agile",
@@ -81,7 +88,7 @@ class CVParser:
         skills = self._extract_skills_sectioned(sections, text)
         seniority = self._infer_seniority(text)
         experience_years = self._infer_experience_years(text)
-        education = self._infer_education(text)
+        education = self._infer_education(text, sections)
 
         proficiencies = tuple(3 for _ in skills)
 
@@ -210,20 +217,80 @@ class CVParser:
 
     @staticmethod
     def _infer_seniority(text: str) -> SeniorityLevel:
+        """Infer seniority from the title area of the CV.
+
+        For LinkedIn PDFs, the job title appears in the first few lines.
+        We scan only the first 500 chars (header/title area) to avoid
+        matching "internship" in experience body text.
+        """
+        # Use only the title area (first ~500 chars) to avoid body text matches
+        title_area = text[:500]
+
         for pattern, level in _SENIORITY_PATTERNS:
-            if pattern.search(text[:1000]):
+            if pattern.search(title_area):
                 return level
         return SeniorityLevel.MID
 
     @staticmethod
     def _infer_experience_years(text: str) -> float:
-        matches = _YEARS_PATTERN.findall(text)
-        if matches:
-            return float(max(int(m) for m in matches))
-        return 0.0
+        """Infer total experience years.
+
+        Handles two patterns:
+        1. Explicit: "5 years of experience", "3+ yrs experience"
+        2. LinkedIn durations: "(2 years 6 months)", "(1 year)", "(6 months)"
+           → sum all durations to get total experience
+        """
+        # Method 1: Explicit "N years experience" statements
+        explicit_matches = _YEARS_PATTERN.findall(text)
+        explicit_max = float(max(int(m) for m in explicit_matches)) if explicit_matches else 0.0
+
+        # Method 2: Sum LinkedIn duration patterns "(N years M months)"
+        total_months = 0.0
+        for match in _LINKEDIN_DURATION.finditer(text):
+            years_str, months_str, only_months_str = match.groups()
+            if years_str:
+                total_months += int(years_str) * 12
+                if months_str:
+                    total_months += int(months_str)
+            elif only_months_str:
+                total_months += int(only_months_str)
+
+        linkedin_years = total_months / 12.0
+
+        # Return the larger of the two methods
+        result = max(explicit_max, linkedin_years)
+        return round(result, 1)
 
     @staticmethod
-    def _infer_education(text: str) -> EducationLevel:
+    def _infer_education(text: str, sections: dict[str, str] | None = None) -> EducationLevel:
+        """Infer education level.
+
+        For LinkedIn PDFs, only search the Education section to avoid
+        false positives (e.g. "Master CopyCat Nuke" matching "master").
+        Falls back to full text if no Education section found.
+        """
+        # Prefer Education section to avoid false positives
+        edu_text = ""
+        if sections and sections.get("education"):
+            edu_text = sections["education"]
+
+        # If we have an education section, search it specifically
+        if edu_text:
+            for pattern, level in _EDUCATION_PATTERNS:
+                if pattern.search(edu_text):
+                    return level
+            # LinkedIn format: "Master's degree", "Bachelor's degree", "Engineer's degree"
+            if re.search(r"\bmaster'?s?\s+degree\b", edu_text, re.I):
+                return EducationLevel.MASTER
+            if re.search(r"\b(?:bachelor'?s?\s+degree|engineer'?s?\s+degree|bachelor\s+of|engineer\s+of)\b", edu_text, re.I):
+                return EducationLevel.BACHELOR
+            # If Education section mentions a University/Institute → assume BACHELOR
+            if re.search(r"\b(?:university|institute|college of technology|polytechnic)\b", edu_text, re.I):
+                return EducationLevel.BACHELOR
+            # If education section exists but no degree/university found → COLLEGE
+            return EducationLevel.COLLEGE
+
+        # Fallback: scan full text (non-LinkedIn CVs)
         for pattern, level in _EDUCATION_PATTERNS:
             if pattern.search(text):
                 return level

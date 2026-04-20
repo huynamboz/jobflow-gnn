@@ -285,7 +285,7 @@
     "computer_vision": {
       "canonical": "computer_vision",
       "category": 3,
-      "aliases": ["Computer Vision", "Image Processing", "computer vision", "OpenCV"]
+      "aliases": ["Computer Vision", "Image Processing", "computer vision", "OpenCV", "Object Detection", "object detection", "Image Classification", "image classification", "Image Segmentation", "image segmentation", "Pose Estimation", "pose estimation", "Face Recognition", "face recognition"]
     },
     "llm": {
       "canonical": "llm",
@@ -409,7 +409,7 @@
     "figma": {
       "canonical": "figma",
       "category": 2,
-      "aliases": ["Figma", "figma"]
+      "aliases": ["Figma", "figma", "Sketch", "sketch", "Adobe XD", "InVision", "invision", "Zeplin", "zeplin", "Balsamiq", "Canva", "canva"]
     },
 
     "sql": {
@@ -943,7 +943,7 @@
     "jmeter": {
       "canonical": "jmeter",
       "category": 2,
-      "aliases": ["JMeter", "jmeter", "Apache JMeter"]
+      "aliases": ["JMeter", "jmeter", "Apache JMeter", "Performance Testing", "performance testing", "Load Testing", "load testing", "Stress Testing"]
     },
     "appium": {
       "canonical": "appium",
@@ -1091,6 +1091,57 @@
       "canonical": "metabase",
       "category": 2,
       "aliases": ["Metabase", "metabase"]
+    },
+
+    "ui_ux_design": {
+      "canonical": "ui_ux_design",
+      "category": 3,
+      "aliases": ["UI/UX", "UX/UI", "UI/UX Design", "UX Design", "UI Design", "User Interface Design", "User Experience Design", "UX/UI Design", "Design UI/UX", "UX UI", "UI UX", "Web Design", "Website Design", "web design", "Mobile UI", "App Design", "Product Design", "Graphic Design", "graphic design", "Visual Design", "visual design", "UED", "Interaction Design"]
+    },
+    "framer": {
+      "canonical": "framer",
+      "category": 2,
+      "aliases": ["Framer", "framer", "Framer Motion"]
+    },
+    "wordpress": {
+      "canonical": "wordpress",
+      "category": 2,
+      "aliases": ["WordPress", "wordpress", "Wordpress", "WooCommerce"]
+    },
+    "wireframing": {
+      "canonical": "wireframing",
+      "category": 3,
+      "aliases": ["Wireframing", "Wireframe", "wireframe", "wireframes", "Wire Framing", "Lo-fi Design", "Mockup", "mockup"]
+    },
+    "prototyping": {
+      "canonical": "prototyping",
+      "category": 3,
+      "aliases": ["Prototyping", "Prototype", "prototype", "Interactive Prototype", "High-fidelity Prototype", "High Fidelity", "Hi-fi Design"]
+    },
+    "ux_research": {
+      "canonical": "ux_research",
+      "category": 3,
+      "aliases": ["UX Research", "User Research", "Usability Testing", "User Testing", "UX research", "Design Research", "User Interview"]
+    },
+    "manual_testing": {
+      "canonical": "manual_testing",
+      "category": 3,
+      "aliases": ["Manual Testing", "Manual Test", "manual testing", "Test Planning", "Test Plan", "Test Case", "Testcase", "Test Scenario", "Test Checklist", "Software Testing", "QA Testing", "QA", "Quality Assurance", "Functional Testing", "Regression Testing", "UAT", "User Acceptance Testing"]
+    },
+    "api_testing": {
+      "canonical": "api_testing",
+      "category": 3,
+      "aliases": ["API Testing", "API Test", "api testing", "REST API Testing", "Web Service Testing"]
+    },
+    "business_analysis": {
+      "canonical": "business_analysis",
+      "category": 3,
+      "aliases": ["Business Analysis", "Business Analyst", "business analysis", "Requirement Analysis", "Requirements Analysis", "Requirements Gathering", "Business Requirements", "User Stories", "BRD", "FRD", "Use Case", "UAT", "Business Process", "Gap Analysis"]
+    },
+    "excel": {
+      "canonical": "excel",
+      "category": 2,
+      "aliases": ["Microsoft Excel", "Excel", "MS Excel", "excel", "Excel VBA", "Spreadsheet", "Google Sheets", "Google Sheet", "Microsoft Office", "MS Office", "Office 365"]
     }
   }
 }
