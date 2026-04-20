@@ -1,0 +1,12 @@
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+
+@custom-variant dark (&:is(.dark *));
+
+@layer components {
+  button {
+    @apply cursor-pointer;
+  }
+}
+
+@config "../../tailwind.config.js";
