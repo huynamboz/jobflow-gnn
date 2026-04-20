@@ -13,6 +13,8 @@ urlpatterns = [
     path("api/skills/", include("apps.skills.urls")),
     path("api/matching/", include("apps.matching.urls")),
 
+    path("api/labeling/", include("apps.labeling.urls")),
+
     # Admin-only APIs
     path("api/admin/users/", include("apps.users.admin_urls")),
     path("api/admin/", include("apps.jobs.admin_urls")),
