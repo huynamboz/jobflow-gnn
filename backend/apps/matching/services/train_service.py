@@ -19,7 +19,7 @@ class TrainService:
     """Orchestrate model training from DB data."""
 
     @staticmethod
-    def run_training() -> TrainRun:
+    def run_training(run: TrainRun | None = None) -> TrainRun:
         """Full training pipeline: DB → graph → GNN → reranker → checkpoint."""
         from ml_service.data.labeler import PairLabeler
         from ml_service.data.skill_normalization import SkillNormalizer
@@ -27,7 +27,8 @@ class TrainService:
         from ml_service.graph.builder import GraphBuilder
         from ml_service.training.trainer import Trainer, TrainConfig
 
-        run = TrainRun.objects.create(status=TrainRun.Status.RUNNING)
+        if run is None:
+            run = TrainRun.objects.create(status=TrainRun.Status.RUNNING)
         t_start = time.time()
 
         try:

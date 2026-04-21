@@ -13,12 +13,27 @@ export interface JobPlatform {
 }
 
 export interface JobSkill {
-  name: string;
-  category: string;
+  skill_name: string;
+  category: number;
   importance: number;
 }
 
 export interface JobListItem {
+  id: number;
+  title: string;
+  company_name: string;
+  platform_name: string;
+  location: string;
+  seniority: number;
+  job_type: string;
+  salary_min: number;
+  salary_max: number;
+  is_active: boolean;
+  date_posted: string | null;
+  created_at: string;
+}
+
+export interface JobDetail {
   id: number;
   title: string;
   company: JobCompany | null;
@@ -26,14 +41,11 @@ export interface JobListItem {
   location: string;
   seniority: number;
   job_type: string;
-  salary_min: number | null;
-  salary_max: number | null;
+  salary_min: number;
+  salary_max: number;
   is_active: boolean;
-  posted_at: string | null;
+  date_posted: string | null;
   created_at: string;
-}
-
-export interface JobDetail extends JobListItem {
   description: string;
   responsibilities: string;
   requirements: string;

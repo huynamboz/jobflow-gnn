@@ -6,6 +6,7 @@ import {
   FileText,
   LayoutDashboard,
   Settings,
+  Sparkles,
   Tags,
 } from "lucide-react";
 
@@ -31,6 +32,7 @@ export const adminConfig = {
         { label: "Models", href: "/admin/models", icon: Brain },
         { label: "Jobs", href: "/admin/jobs", icon: Briefcase },
         { label: "CVs", href: "/admin/cvs", icon: FileText },
+        { label: "Recommend", href: "/admin/recommend", icon: Sparkles },
       ],
     },
     {

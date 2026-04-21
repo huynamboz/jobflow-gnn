@@ -92,8 +92,8 @@ function DetailDrawer({ cvId, onClose }: { cvId: number; onClose: () => void }) 
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {cv.skills.map((s) => (
-                    <span key={s.name} className="rounded-lg border border-default-200 bg-default-50 px-2 py-0.5 text-xs text-default-600">
-                      {s.name}
+                    <span key={s.skill_name} className="rounded-lg border border-default-200 bg-default-50 px-2 py-0.5 text-xs text-default-600">
+                      {s.skill_name}
                     </span>
                   ))}
                 </div>

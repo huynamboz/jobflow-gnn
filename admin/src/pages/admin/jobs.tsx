@@ -17,8 +17,8 @@ const SENIORITY_COLOR: Record<number, string> = {
   5: "bg-rose-100 text-rose-700",
 };
 const JOB_TYPE_LABEL: Record<string, string> = {
-  full_time: "Full-time", part_time: "Part-time",
-  remote: "Remote", hybrid: "Hybrid", on_site: "On-site",
+  "full-time": "Full-time", "part-time": "Part-time",
+  remote: "Remote", hybrid: "Hybrid", "on-site": "On-site",
 };
 
 function fmtSalary(min: number | null, max: number | null) {
@@ -81,8 +81,8 @@ function DetailDrawer({ jobId, onClose }: { jobId: number; onClose: () => void }
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-default-400">Skills ({job.skills.length})</p>
                 <div className="flex flex-wrap gap-1.5">
                   {job.skills.map((s) => (
-                    <span key={s.name} className="rounded-lg border border-default-200 bg-default-50 px-2 py-0.5 text-xs text-default-600">
-                      {s.name}{s.importance >= 4 && <span className="ml-1 text-orange-500">★</span>}
+                    <span key={s.skill_name} className="rounded-lg border border-default-200 bg-default-50 px-2 py-0.5 text-xs text-default-600">
+                      {s.skill_name}{s.importance >= 4 && <span className="ml-1 text-orange-500">★</span>}
                     </span>
                   ))}
                 </div>
@@ -203,8 +203,8 @@ export default function JobsPage() {
                             <span className="truncate font-medium text-default-800">{job.title}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-default-600">{job.company?.name ?? "—"}</td>
-                        <td className="px-4 py-3 text-default-500">{job.platform?.name ?? "—"}</td>
+                        <td className="px-4 py-3 text-default-600">{job.company_name ?? "—"}</td>
+                        <td className="px-4 py-3 text-default-500">{job.platform_name ?? "—"}</td>
                         <td className="px-4 py-3">
                           <span className={`rounded-lg px-2 py-0.5 text-xs font-medium ${SENIORITY_COLOR[job.seniority] ?? "bg-gray-100"}`}>
                             {SENIORITY_LABEL[job.seniority] ?? job.seniority}

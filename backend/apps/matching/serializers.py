@@ -24,6 +24,12 @@ class JobMatchResponse(serializers.Serializer):
     missing_skills = serializers.ListField(child=serializers.CharField())
     seniority_match = serializers.BooleanField()
     title = serializers.CharField()
+    company_name = serializers.CharField(default="")
+    location = serializers.CharField(default="")
+    job_type = serializers.CharField(default="")
+    salary_min = serializers.IntegerField(default=0)
+    salary_max = serializers.IntegerField(default=0)
+    source_url = serializers.CharField(default="")
 
 
 class CVParseResponse(serializers.Serializer):

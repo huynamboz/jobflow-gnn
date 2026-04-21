@@ -62,22 +62,41 @@ def _get_parser():
         return _parser
 
 
-def match_cv_text(cv_text: str, top_k: int = 10) -> list[dict]:
-    """Match CV text against all jobs. Returns list of match results."""
-    engine = _get_engine()
-    results = engine.match_cv_text(cv_text, top_k=top_k)
-    return [
-        {
+def _enrich(results) -> list[dict]:
+    """Enrich raw match results with DB job fields."""
+    from apps.jobs.models import Job
+
+    job_ids = [r.job_id for r in results]
+    db_jobs = {
+        j.id: j
+        for j in Job.objects.filter(id__in=job_ids).select_related("company", "platform")
+    }
+    enriched = []
+    for r in results:
+        j = db_jobs.get(r.job_id)
+        enriched.append({
             "job_id": r.job_id,
             "score": r.score,
             "eligible": r.eligible,
             "matched_skills": list(r.matched_skills),
             "missing_skills": list(r.missing_skills),
             "seniority_match": r.seniority_match,
-            "title": r.title,
-        }
-        for r in results
-    ]
+            "title": j.title if j else r.title,
+            "company_name": j.company.name if j and j.company else "",
+            "location": j.location if j else "",
+            "job_type": j.job_type if j else "",
+            "salary_min": j.salary_min if j else 0,
+            "salary_max": j.salary_max if j else 0,
+            "source_url": j.source_url if j else "",
+        })
+    return enriched
+
+
+def match_cv_text(cv_text: str, top_k: int = 10) -> list[dict]:
+    """Match CV text against all jobs. Returns list of match results."""
+    engine = _get_engine()
+    results = engine.match_cv_text(cv_text, top_k=top_k)
+    return _enrich(results)
 
 
 def match_cv_file(file_path: str, top_k: int = 10) -> list[dict]:
@@ -89,18 +108,7 @@ def match_cv_file(file_path: str, top_k: int = 10) -> list[dict]:
 
     engine = _get_engine()
     results = engine.match_cv(cv_data, top_k=top_k)
-    return [
-        {
-            "job_id": r.job_id,
-            "score": r.score,
-            "eligible": r.eligible,
-            "matched_skills": list(r.matched_skills),
-            "missing_skills": list(r.missing_skills),
-            "seniority_match": r.seniority_match,
-            "title": r.title,
-        }
-        for r in results
-    ]
+    return _enrich(results)
 
 
 def parse_cv_file(file_path: str) -> dict:

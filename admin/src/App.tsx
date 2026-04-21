@@ -9,6 +9,7 @@ import LabelingPage from "@/pages/admin/labeling";
 import ModelsPage from "@/pages/admin/models";
 import JobsPage from "@/pages/admin/jobs";
 import CVsPage from "@/pages/admin/cvs";
+import RecommendPage from "@/pages/admin/recommend";
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
         <Route path="models" element={<ModelsPage />} />
         <Route path="jobs" element={<JobsPage />} />
         <Route path="cvs" element={<CVsPage />} />
+        <Route path="recommend" element={<RecommendPage />} />
       </Route>
 
       <Route element={<PublicRoute />}>

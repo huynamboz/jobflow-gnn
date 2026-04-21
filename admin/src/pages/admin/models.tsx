@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardBody } from "@heroui/card";
 import { Brain, CheckCircle, Clock, XCircle, Zap } from "lucide-react";
 
@@ -165,6 +165,7 @@ export default function ModelsPage() {
   const [activating, setActivating] = useState<number | null>(null);
   const [triggering, setTriggering] = useState(false);
   const [selected, setSelected] = useState<TrainRun | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -175,6 +176,17 @@ export default function ModelsPage() {
   };
 
   useEffect(() => { load(); }, []);
+
+  // Auto-poll while any run is training
+  useEffect(() => {
+    const hasRunning = runs.some((r) => r.status === "running");
+    if (hasRunning) {
+      pollRef.current = setInterval(load, 10_000);
+    } else {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    }
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [runs]);
 
   const handleActivate = async (run: TrainRun, e: React.MouseEvent) => {
     e.stopPropagation();

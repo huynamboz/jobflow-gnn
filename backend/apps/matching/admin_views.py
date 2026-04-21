@@ -104,19 +104,28 @@ class AdminTrainRunActivateView(APIView):
 
 
 class AdminTriggerTrainView(APIView):
-    """POST /api/admin/training/trigger/ — Trigger new training run."""
+    """POST /api/admin/training/trigger/ — Trigger new training run (background)."""
 
     permission_classes = [IsAdmin]
 
     @extend_schema(tags=["Admin"])
     def post(self, request):
+        import threading
         from apps.matching.services import TrainService
 
-        try:
-            run = TrainService.run_training()
-            return Response({"success": True, "data": TrainRunSerializer(run).data})
-        except Exception as e:
+        if TrainRun.objects.filter(status=TrainRun.Status.RUNNING).exists():
             return Response(
-                {"success": False, "error": {"code": "INTERNAL_ERROR", "message": str(e), "status": 500}},
-                status=500,
+                {"success": False, "error": {"code": "CONFLICT", "message": "Training already in progress.", "status": 409}},
+                status=409,
             )
+
+        run = TrainRun.objects.create(status=TrainRun.Status.RUNNING)
+
+        def _train():
+            try:
+                TrainService.run_training(run=run)
+            except Exception:
+                pass  # run_training sets status=FAILED on error
+
+        threading.Thread(target=_train, daemon=True).start()
+        return Response({"success": True, "message": "Training started.", "data": TrainRunSerializer(run).data})

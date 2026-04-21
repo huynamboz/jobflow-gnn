@@ -1,6 +1,6 @@
 export interface CVSkillItem {
-  name: string;
-  category: string;
+  skill_name: string;
+  category: number;
   proficiency: number;
 }
 
@@ -11,13 +11,13 @@ export interface AdminCVItem {
   experience_years: number;
   education: number;
   source: string;
-  source_category: string;
   skill_count: number;
   is_active: boolean;
   created_at: string;
 }
 
 export interface AdminCVDetail extends AdminCVItem {
+  source_category: string;
   skills: CVSkillItem[];
   parsed_text: string;
 }
