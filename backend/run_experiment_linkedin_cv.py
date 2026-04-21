@@ -286,11 +286,26 @@ def main():
     gnn_batch_fn, _ = make_gnn_hybrid_scorer(result.model, result.data_clean, cvs, jobs, TRAIN_CONFIG)
     skill_scorer = SkillOverlapScorer()
 
+    # Precompute Skill Overlap matrix once (vectorized) — used for both 8a and 8b
+    logger.info("Precomputing Skill Overlap matrix (%d CVs × %d jobs)...", len(cvs), len(jobs))
+    t_mat = time.time()
+    skill_matrix = SkillOverlapScorer.build_matrix(cvs, jobs)
+    logger.info("  Matrix built in %.1fs", time.time() - t_mat)
+    cv_index = [c.cv_id for c in cvs]  # row i → cv_id
+
     # 8a: Full-ranking baseline (each CV ranks ALL jobs) — honest upper-bound check
     _print_header("Step 8a: Full-Ranking (all %d jobs)" % len(jobs))
     gnn_full    = per_cv_eval.evaluate_batch(gnn_batch_fn, ks=per_cv_ks)
-    skill_full  = per_cv_eval.evaluate(skill_scorer, ks=per_cv_ks)
-    bm25_full   = per_cv_eval.evaluate(bm25, ks=per_cv_ks)
+    skill_full  = per_cv_eval.evaluate_twostage_matrix(
+        stage1_matrix=skill_matrix, cv_index=cv_index,
+        stage2_batch_fn=lambda cv, jobs_list: np.array([skill_scorer.score(cv, j) for j in jobs_list]),
+        retrieve_n=len(jobs), ks=per_cv_ks,
+    )
+    bm25_full   = per_cv_eval.evaluate_twostage_matrix(
+        stage1_matrix=skill_matrix, cv_index=cv_index,
+        stage2_batch_fn=lambda cv, jobs_list: np.array([bm25.score(cv, j) for j in jobs_list]),
+        retrieve_n=len(jobs), ks=per_cv_ks,
+    )
     cosine_full = per_cv_eval.evaluate(CosineSimilarityScorer(provider), ks=per_cv_ks)
 
     print_per_cv_results({
@@ -302,24 +317,22 @@ def main():
 
     # 8b: 2-stage pipeline — phản ánh đúng cách system hoạt động trong thực tế
     # Stage 1: Skill Overlap retrieve top-100 → Stage 2: GNN re-rank
+    # Reuse precomputed matrix — Stage 1 computed zero times extra
     _print_header("Step 8b: 2-Stage Pipeline (Stage1=SkillOverlap top-100, Stage2=GNN)")
-    gnn_2stage = per_cv_eval.evaluate_twostage(
-        stage1_scorer=skill_scorer,
+    gnn_2stage = per_cv_eval.evaluate_twostage_matrix(
+        stage1_matrix=skill_matrix, cv_index=cv_index,
         stage2_batch_fn=gnn_batch_fn,
-        retrieve_n=100,
-        ks=per_cv_ks,
+        retrieve_n=100, ks=per_cv_ks,
     )
-    skill_2stage = per_cv_eval.evaluate_twostage(
-        stage1_scorer=skill_scorer,
-        stage2_batch_fn=lambda cv, jobs: np.array([skill_scorer.score(cv, j) for j in jobs]),
-        retrieve_n=100,
-        ks=per_cv_ks,
+    skill_2stage = per_cv_eval.evaluate_twostage_matrix(
+        stage1_matrix=skill_matrix, cv_index=cv_index,
+        stage2_batch_fn=lambda cv, jobs_list: np.array([skill_scorer.score(cv, j) for j in jobs_list]),
+        retrieve_n=100, ks=per_cv_ks,
     )
-    bm25_2stage = per_cv_eval.evaluate_twostage(
-        stage1_scorer=skill_scorer,
-        stage2_batch_fn=lambda cv, jobs: np.array([bm25.score(cv, j) for j in jobs]),
-        retrieve_n=100,
-        ks=per_cv_ks,
+    bm25_2stage = per_cv_eval.evaluate_twostage_matrix(
+        stage1_matrix=skill_matrix, cv_index=cv_index,
+        stage2_batch_fn=lambda cv, jobs_list: np.array([bm25.score(cv, j) for j in jobs_list]),
+        retrieve_n=100, ks=per_cv_ks,
     )
 
     print_per_cv_results({
