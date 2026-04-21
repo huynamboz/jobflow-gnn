@@ -9,6 +9,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import time
 from datetime import datetime
@@ -66,7 +67,7 @@ logging.basicConfig(
 logger = logging.getLogger("experiment_linkedin")
 logger.info("Log file: %s", _LOG_FILE.resolve())
 
-DATASET_DIR = Path("/Users/huynam/Documents/PROJECT/jobflow-gnn/Dataset")
+DATASET_DIR = Path(os.environ.get("DATASET_DIR", "/Users/huynam/Documents/PROJECT/jobflow-gnn/Dataset"))
 RAW_JOBS_PATH = Path("data/raw_jobs.jsonl")
 SKILL_ALIAS_PATH = "ml_service/data/skill-alias.json"
 
