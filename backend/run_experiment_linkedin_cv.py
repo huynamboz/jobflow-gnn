@@ -22,7 +22,7 @@ from ml_service.baselines.cosine import CosineSimilarityScorer
 from ml_service.baselines.skill_overlap import SkillOverlapScorer
 from ml_service.crawler.storage import deduplicate, load_raw_jobs
 from ml_service.data.labeler import PairLabeler
-from ml_service.data.linkedin_cv_loader import load_linkedin_cvs
+from ml_service.data.linkedin_cv_loader import load_linkedin_cvs_json
 from ml_service.data.skill_extractor import SkillExtractor
 from ml_service.data.skill_normalization import SkillNormalizer
 from ml_service.embedding import get_provider
@@ -67,7 +67,7 @@ logging.basicConfig(
 logger = logging.getLogger("experiment_linkedin")
 logger.info("Log file: %s", _LOG_FILE.resolve())
 
-DATASET_DIR = Path(os.environ.get("DATASET_DIR", "/Users/huynam/Documents/PROJECT/jobflow-gnn/Dataset"))
+CV_JSON_PATH  = Path("data/linkedin_cvs.json")   # JSON cache — fast, no PDF parsing needed
 RAW_JOBS_PATH = Path("data/raw_jobs.jsonl")
 SKILL_ALIAS_PATH = "ml_service/data/skill-alias.json"
 
@@ -187,11 +187,8 @@ def main():
 
     # --- Step 2: Load LinkedIn CVs ---
     _print_header("Step 2: Load LinkedIn CVs")
-    cvs = load_linkedin_cvs(
-        DATASET_DIR, normalizer,
-        min_skills=2,
-        categories=["AI", "Devops", "Software Engineer", "Tester", "Business Analyst", "UX_UI"],
-    )
+    cvs = load_linkedin_cvs_json(CV_JSON_PATH)
+    cvs = [c for c in cvs if len(c.skills) >= 2]
     logger.info("Loaded %d LinkedIn CVs", len(cvs))
 
     from collections import Counter
