@@ -1,11 +1,12 @@
 import type { LucideIcon } from "lucide-react";
 
 import {
-  LayoutDashboard,
-  Tags,
+  Brain,
   Briefcase,
   FileText,
+  LayoutDashboard,
   Settings,
+  Tags,
 } from "lucide-react";
 
 export type AdminNavItem = {
@@ -27,6 +28,7 @@ export const adminConfig = {
       items: [
         { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
         { label: "Labeling", href: "/admin/labeling", icon: Tags },
+        { label: "Models", href: "/admin/models", icon: Brain },
         { label: "Jobs", href: "/admin/jobs", icon: Briefcase },
         { label: "CVs", href: "/admin/cvs", icon: FileText },
       ],
