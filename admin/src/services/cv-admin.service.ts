@@ -1,6 +1,6 @@
 import { apiClient } from "@/lib/api-client";
 import type { ApiSuccess } from "@/types/api.types";
-import type { AdminCVDetail, CVListResponse } from "@/types/cv-admin.types";
+import type { AdminCVDetail, CVListResponse, CVUploadResult } from "@/types/cv-admin.types";
 
 export interface CVFilters {
   search?: string;
@@ -22,6 +22,15 @@ class CVAdminService {
 
   async getCV(id: number): Promise<AdminCVDetail> {
     const res = await apiClient.get<ApiSuccess<AdminCVDetail>>(`/admin/cvs/${id}/`);
+    return res.data.data;
+  }
+
+  async uploadCV(file: File): Promise<CVUploadResult> {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await apiClient.post<ApiSuccess<CVUploadResult>>("/cvs/upload/", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
     return res.data.data;
   }
 }

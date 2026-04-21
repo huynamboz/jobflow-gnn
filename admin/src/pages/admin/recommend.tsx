@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { ExternalLink, Loader2, Search, Upload, X } from "lucide-react";
 
 import { matchingService } from "@/services/matching.service";
@@ -91,7 +92,9 @@ function JobCard({ job }: { job: JobMatchResult }) {
 }
 
 export default function RecommendPage() {
-  const [text, setText] = useState("");
+  const location = useLocation();
+  const prefilled = (location.state as { cvText?: string } | null)?.cvText ?? "";
+  const [text, setText] = useState(prefilled);
   const [file, setFile] = useState<File | null>(null);
   const [topK, setTopK] = useState(10);
   const [results, setResults] = useState<JobMatchResult[] | null>(null);

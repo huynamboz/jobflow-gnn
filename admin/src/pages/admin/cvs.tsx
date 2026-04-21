@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardBody } from "@heroui/card";
-import { ChevronLeft, ChevronRight, FileText, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Loader2, Sparkles, Upload, X } from "lucide-react";
 
 import { cvAdminService } from "@/services/cv-admin.service";
-import type { AdminCVDetail, AdminCVItem } from "@/types/cv-admin.types";
+import type { AdminCVDetail, AdminCVItem, CVUploadResult } from "@/types/cv-admin.types";
 
 const SENIORITY_LABEL: Record<number, string> = {
   0: "Intern", 1: "Junior", 2: "Mid", 3: "Senior", 4: "Lead", 5: "Manager",
@@ -54,7 +55,6 @@ function DetailDrawer({ cvId, onClose }: { cvId: number; onClose: () => void }) 
           <div className="py-16 text-center text-default-400">CV not found.</div>
         ) : (
           <div className="space-y-5 p-5">
-            {/* Header */}
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${SENIORITY_COLOR[cv.seniority] ?? "bg-gray-100"}`}>
                 {SENIORITY_LABEL[cv.seniority] ?? cv.seniority}
@@ -69,7 +69,6 @@ function DetailDrawer({ cvId, onClose }: { cvId: number; onClose: () => void }) 
               )}
             </div>
 
-            {/* Info */}
             <div className="space-y-1.5 rounded-xl border border-default-100 bg-default-50 px-4 py-3 text-sm">
               {[
                 ["Experience", `${cv.experience_years}y`],
@@ -84,7 +83,6 @@ function DetailDrawer({ cvId, onClose }: { cvId: number; onClose: () => void }) 
               ))}
             </div>
 
-            {/* Skills */}
             {cv.skills && cv.skills.length > 0 && (
               <div>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-default-400">
@@ -100,7 +98,6 @@ function DetailDrawer({ cvId, onClose }: { cvId: number; onClose: () => void }) 
               </div>
             )}
 
-            {/* Parsed text */}
             {cv.parsed_text && (
               <div>
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-default-400">CV Text</p>
@@ -116,9 +113,78 @@ function DetailDrawer({ cvId, onClose }: { cvId: number; onClose: () => void }) 
   );
 }
 
+function UploadResultModal({ result, onClose, onFindJobs }: {
+  result: CVUploadResult;
+  onClose: () => void;
+  onFindJobs: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-default-200 px-5 py-4">
+          <div>
+            <p className="font-semibold text-default-900">CV Uploaded & Parsed</p>
+            <p className="text-xs text-default-500">{result.file_name}</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-default-400 hover:bg-default-100">
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 p-5">
+          <div className="flex flex-wrap gap-2">
+            <span className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${SENIORITY_COLOR[result.seniority] ?? "bg-gray-100"}`}>
+              {SENIORITY_LABEL[result.seniority] ?? result.seniority}
+            </span>
+            <span className="rounded-lg border border-default-200 bg-default-50 px-2.5 py-1 text-xs text-default-600">
+              {result.experience_years}y exp
+            </span>
+            <span className="rounded-lg border border-default-200 bg-default-50 px-2.5 py-1 text-xs text-default-600">
+              {EDUCATION_LABEL[result.education] ?? result.education}
+            </span>
+          </div>
+
+          {result.skills.length > 0 ? (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-default-400">
+                Skills extracted ({result.skills.length})
+              </p>
+              <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
+                {result.skills.map((s) => (
+                  <span key={s.skill_name} className="rounded-lg border border-default-200 bg-default-50 px-2 py-0.5 text-xs text-default-600">
+                    {s.skill_name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-amber-600">No skills extracted. The CV may be image-only or have unsupported formatting.</p>
+          )}
+        </div>
+
+        <div className="flex gap-2 border-t border-default-100 px-5 py-4">
+          <button onClick={onClose}
+            className="rounded-xl border border-default-200 px-4 py-2 text-sm text-default-600 hover:bg-default-50">
+            Close
+          </button>
+          {result.parsed_text && (
+            <button onClick={onFindJobs}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+              <Sparkles className="size-4" />
+              Find Matching Jobs
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const PAGE_SIZE = 20;
 
 export default function CVsPage() {
+  const navigate = useNavigate();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<AdminCVItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -126,6 +192,9 @@ export default function CVsPage() {
   const [seniority, setSeniority] = useState("");
   const [source, setSource] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<CVUploadResult | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const load = useCallback((p: number, sen: string, src: string) => {
     setLoading(true);
@@ -142,14 +211,50 @@ export default function CVsPage() {
     load(1, sen, src);
   };
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const result = await cvAdminService.uploadCV(file);
+      setUploadResult(result);
+      load(1, seniority, source);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Upload failed.";
+      setUploadError(msg);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-default-900">CVs</h1>
-        <p className="text-default-500">{total.toLocaleString()} CVs in system</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-default-900">CVs</h1>
+          <p className="text-default-500">{total.toLocaleString()} CVs in system</p>
+        </div>
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          {uploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+          {uploading ? "Uploading…" : "Upload CV"}
+        </button>
+        <input ref={fileRef} type="file" accept=".pdf,.docx,.txt" className="hidden" onChange={handleFileChange} />
       </div>
+
+      {uploadError && (
+        <div className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{uploadError}</span>
+          <button onClick={() => setUploadError(null)}><X className="size-4" /></button>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-3">
         <select value={seniority} onChange={(e) => handleFilter(e.target.value, source)}
@@ -235,6 +340,17 @@ export default function CVsPage() {
       </Card>
 
       {selectedId !== null && <DetailDrawer cvId={selectedId} onClose={() => setSelectedId(null)} />}
+
+      {uploadResult && (
+        <UploadResultModal
+          result={uploadResult}
+          onClose={() => setUploadResult(null)}
+          onFindJobs={() => {
+            navigate("/admin/recommend", { state: { cvText: uploadResult.parsed_text } });
+            setUploadResult(null);
+          }}
+        />
+      )}
     </div>
   );
 }

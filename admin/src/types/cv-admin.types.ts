@@ -29,3 +29,17 @@ export interface CVListResponse {
   page: number;
   page_size: number;
 }
+
+export interface CVUploadResult {
+  id: number;
+  file_name: string;
+  seniority: number;
+  experience_years: number;
+  education: number;
+  parsed_text: string;
+  source: string;
+  source_category: string;
+  skills: CVSkillItem[];
+  is_active: boolean;
+  created_at: string;
+}
