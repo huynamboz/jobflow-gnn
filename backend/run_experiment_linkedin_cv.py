@@ -74,13 +74,14 @@ NUM_POSITIVE_PAIRS = 8000   # increased from 3500 — uses 80% of available posi
 NOISE_RATE = 0.05
 SEED = 42
 
-# Update hidden_channels/dropout/lr after running run_grid_search.py
+# Best from grid search: hidden=384, dropout=0.1, lr=1e-3 (NDCG=1.0, R@10 best)
+# Runner-up by AUC: hidden=256, dropout=0.1, lr=1e-3 (AUC=0.7369)
 TRAIN_CONFIG = TrainConfig(
     model_type="graphsage",
-    hidden_channels=256,
+    hidden_channels=384,
     num_layers=3,
     lr=1e-3,
-    dropout=0.0,
+    dropout=0.1,
     weight_decay=1e-5,
     epochs=300,
     patience=50,
