@@ -201,6 +201,77 @@ class PerCVEvaluator:
         logger.info("Per-CV avg metrics: %s", result.avg_metrics)
         return result
 
+    def evaluate_from_matrix(
+        self,
+        score_matrix: np.ndarray,
+        cv_index: list[int],
+        ks: tuple[int, ...] = (5, 10, 20, 50),
+    ) -> PerCVResult:
+        """Full-ranking evaluation using precomputed score matrix[i_cv, i_job].
+
+        score_matrix: ndarray[n_cvs, n_jobs] — row order matches cv_index, col order matches self._jobs
+        cv_index: list of cv_ids, mapping row i → cv_id
+        """
+        result = PerCVResult()
+        all_cv_metrics: list[dict[str, float]] = []
+        total_test_positives = 0
+
+        eligible_cvs = {
+            cv_id: positives
+            for cv_id, positives in self._test_positives.items()
+            if len(positives) >= self._min_test_positives and cv_id in self._cv_map
+        }
+        result.num_cvs_with_test_positives = len(self._test_positives)
+        result.num_cvs_evaluated = len(eligible_cvs)
+
+        if not eligible_cvs:
+            return result
+
+        cv_row = {cv_id: i for i, cv_id in enumerate(cv_index)}
+        log_every = max(1, len(eligible_cvs) // 10)
+        logger.info("Matrix full-ranking eval: %d CVs × %d jobs", len(eligible_cvs), len(self._jobs))
+
+        for i, (cv_id, relevant_jobs) in enumerate(eligible_cvs.items()):
+            exclude_jobs = self._train_jobs.get(cv_id, set())
+            total_test_positives += len(relevant_jobs)
+
+            row_scores = score_matrix[cv_row[cv_id]].copy()
+            candidate_mask = np.array([j.job_id not in exclude_jobs for j in self._jobs])
+            candidate_scores = row_scores[candidate_mask]
+            y_true = np.array(
+                [1 if j.job_id in relevant_jobs else 0
+                 for j in self._jobs if j.job_id not in exclude_jobs]
+            )
+
+            metrics: dict[str, float] = {}
+            for k in ks:
+                metrics[f"recall@{k}"] = recall_at_k(y_true, candidate_scores, k)
+                metrics[f"precision@{k}"] = precision_at_k(y_true, candidate_scores, k)
+                metrics[f"ndcg@{k}"] = ndcg_at_k(y_true, candidate_scores, k)
+                metrics[f"hit_rate@{k}"] = hit_rate_at_k(y_true, candidate_scores, k)
+            metrics["mrr"] = mrr(y_true, candidate_scores)
+
+            result.per_cv_metrics[cv_id] = metrics
+            all_cv_metrics.append(metrics)
+
+            if (i + 1) % log_every == 0:
+                logger.info("  Progress: %d/%d CVs done", i + 1, len(eligible_cvs))
+
+        if all_cv_metrics:
+            all_keys = all_cv_metrics[0].keys()
+            result.avg_metrics = {
+                key: float(np.mean([m[key] for m in all_cv_metrics]))
+                for key in all_keys
+            }
+            result.avg_test_positives_per_cv = total_test_positives / len(eligible_cvs)
+            sort_key = f"ndcg@{ks[1]}" if len(ks) > 1 else f"ndcg@{ks[0]}"
+            sorted_cvs = sorted(result.per_cv_metrics.items(), key=lambda x: x[1].get(sort_key, 0.0))
+            result.worst_cvs = [cv_id for cv_id, _ in sorted_cvs[:5]]
+            result.best_cvs = [cv_id for cv_id, _ in sorted_cvs[-5:]]
+
+        logger.info("Matrix eval avg: %s", result.avg_metrics)
+        return result
+
     def evaluate_twostage_matrix(
         self,
         stage1_matrix: np.ndarray,

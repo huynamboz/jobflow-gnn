@@ -293,26 +293,15 @@ def main():
     logger.info("  Matrix built in %.1fs", time.time() - t_mat)
     cv_index = [c.cv_id for c in cvs]  # row i → cv_id
 
-    # 8a: Full-ranking baseline (each CV ranks ALL jobs) — honest upper-bound check
+    # 8a: Full-ranking — GNN (GPU batch) + Skill Overlap (precomputed matrix)
+    # BM25/Cosine full-ranking skipped: O(CVs×Jobs) Python loops, not practical
     _print_header("Step 8a: Full-Ranking (all %d jobs)" % len(jobs))
-    gnn_full    = per_cv_eval.evaluate_batch(gnn_batch_fn, ks=per_cv_ks)
-    skill_full  = per_cv_eval.evaluate_twostage_matrix(
-        stage1_matrix=skill_matrix, cv_index=cv_index,
-        stage2_batch_fn=lambda cv, jobs_list: np.array([skill_scorer.score(cv, j) for j in jobs_list]),
-        retrieve_n=len(jobs), ks=per_cv_ks,
-    )
-    bm25_full   = per_cv_eval.evaluate_twostage_matrix(
-        stage1_matrix=skill_matrix, cv_index=cv_index,
-        stage2_batch_fn=lambda cv, jobs_list: np.array([bm25.score(cv, j) for j in jobs_list]),
-        retrieve_n=len(jobs), ks=per_cv_ks,
-    )
-    cosine_full = per_cv_eval.evaluate(CosineSimilarityScorer(provider), ks=per_cv_ks)
+    gnn_full   = per_cv_eval.evaluate_batch(gnn_batch_fn, ks=per_cv_ks)
+    skill_full = per_cv_eval.evaluate_from_matrix(skill_matrix, cv_index, ks=per_cv_ks)
 
     print_per_cv_results({
-        "Cosine (full)":         cosine_full,
-        "Skill Overlap (full)":  skill_full,
-        "BM25 (full)":           bm25_full,
-        "GNN (full)":            gnn_full,
+        "Skill Overlap (full)": skill_full,
+        "GNN (full)":           gnn_full,
     }, ks=per_cv_ks)
 
     # 8b: 2-stage pipeline — phản ánh đúng cách system hoạt động trong thực tế
