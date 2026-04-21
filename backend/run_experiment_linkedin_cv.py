@@ -70,15 +70,17 @@ DATASET_DIR = Path("/Users/huynam/Documents/PROJECT/jobflow-gnn/Dataset")
 RAW_JOBS_PATH = Path("data/raw_jobs.jsonl")
 SKILL_ALIAS_PATH = "ml_service/data/skill-alias.json"
 
-NUM_POSITIVE_PAIRS = 3500
+NUM_POSITIVE_PAIRS = 8000   # increased from 3500 — uses 80% of available positives
 NOISE_RATE = 0.05
 SEED = 42
 
+# Update hidden_channels/dropout/lr after running run_grid_search.py
 TRAIN_CONFIG = TrainConfig(
     model_type="graphsage",
     hidden_channels=256,
     num_layers=3,
     lr=1e-3,
+    dropout=0.0,
     weight_decay=1e-5,
     epochs=300,
     patience=50,

@@ -45,6 +45,7 @@ class HeteroGraphSAGE(nn.Module):
         metadata: tuple[list[str], list[tuple[str, str, str]]],
         hidden_channels: int = 128,
         num_layers: int = 2,
+        dropout: float = 0.0,
         node_dims: dict[str, int] | None = None,
     ) -> None:
         super().__init__()
@@ -60,6 +61,7 @@ class HeteroGraphSAGE(nn.Module):
             hidden_channels=hidden_channels,
             num_layers=num_layers,
             out_channels=hidden_channels,
+            dropout=dropout,
         )
         self.gnn = to_hetero(backbone, metadata, aggr="mean")
         self.decoder = MLPDecoder(hidden_channels)

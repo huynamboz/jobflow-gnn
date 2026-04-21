@@ -41,6 +41,7 @@ class TrainConfig:
     weight_decay: float = 1e-5
     epochs: int = 50
     patience: int = 10
+    dropout: float = 0.0          # dropout on GNN layers
     drop_edge_rate: float = 0.0  # DropEdge (ICLR 2020): fraction of edges to drop per train iter
     full_space_neg: bool = True  # BPR standard: sample negatives from full job space, not just labeled
     warmup_epochs: int = 0       # skip early stopping for first N epochs (avoids curriculum transition dip)
@@ -248,6 +249,7 @@ class Trainer:
                 metadata=metadata,
                 hidden_channels=cfg.hidden_channels,
                 num_layers=cfg.num_layers,
+                dropout=cfg.dropout,
             )
         model = model.to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
