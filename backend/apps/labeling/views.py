@@ -1,11 +1,15 @@
+import mimetypes
+import os
+
 from django.db.models import Count, Q
+from django.http import FileResponse, Http404
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.users.permissions import IsAdmin
 
-from .models import HumanLabel, PairQueue, PairStatus, SelectionReason
+from .models import HumanLabel, LabelingCV, PairQueue, PairStatus, SelectionReason
 from .serializers import (
     ExportItemSerializer,
     LabelingCVSerializer,
@@ -161,6 +165,26 @@ class LabelingStatsView(APIView):
             "by_split": by_split,
         }
         return Response({"success": True, "data": data})
+
+
+class CVPdfView(APIView):
+    """GET /api/labeling/cvs/<cv_id>/pdf/ — Serve the CV PDF file."""
+
+    permission_classes = [IsAdmin]
+
+    def get(self, request, cv_id):
+        try:
+            cv = LabelingCV.objects.get(cv_id=cv_id)
+        except LabelingCV.DoesNotExist:
+            raise Http404
+
+        if not cv.pdf_path or not os.path.isfile(cv.pdf_path):
+            return Response(
+                {"success": False, "error": {"code": "NOT_FOUND", "message": "PDF not available.", "status": 404}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return FileResponse(open(cv.pdf_path, "rb"), content_type="application/pdf")
 
 
 class LabelingExportView(APIView):

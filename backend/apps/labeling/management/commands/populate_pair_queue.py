@@ -29,8 +29,9 @@ class Command(BaseCommand):
     help = "Populate PairQueue with smart-selected CV-Job pairs for labeling"
 
     def add_arguments(self, parser):
-        parser.add_argument("--cvs-path",   default="data/linkedin_cvs.json", help="Path to linkedin_cvs.json")
+        parser.add_argument("--cvs-path",    default="data/linkedin_cvs.json", help="Path to linkedin_cvs.json")
         parser.add_argument("--jobs-path",  default="data/raw_jobs.jsonl",    help="Path to raw_jobs.jsonl")
+        parser.add_argument("--dataset-dir", default=None,                    help="Path to Dataset/ folder for PDF paths")
         parser.add_argument("--n-pairs",    type=int, default=300,            help="Total pairs to generate")
         parser.add_argument("--max-per-cv", type=int, default=8,              help="Max pairs per CV")
         parser.add_argument("--seed",       type=int, default=42,             help="Random seed")
@@ -63,6 +64,19 @@ class Command(BaseCommand):
         cvs = [c for c in cvs if len(c.skills) >= 2]
         self.stdout.write(f"  Loaded {len(cvs)} CVs")
 
+        # Build cv_id → pdf_path mapping from Dataset dir (same sort order as load_linkedin_cvs)
+        cv_pdf_paths: dict[int, str] = {}
+        if options["dataset_dir"]:
+            dataset_dir = Path(options["dataset_dir"])
+            idx = 0
+            for category_dir in sorted(dataset_dir.iterdir()):
+                if not category_dir.is_dir():
+                    continue
+                for pdf_path in sorted(category_dir.glob("*.pdf")):
+                    cv_pdf_paths[idx] = str(pdf_path)
+                    idx += 1
+            self.stdout.write(f"  Mapped {len(cv_pdf_paths)} PDF paths")
+
         # --- Load Jobs ---
         self.stdout.write("Loading Jobs...")
         raw_jobs = deduplicate(load_raw_jobs(options["jobs_path"]))
@@ -92,6 +106,7 @@ class Command(BaseCommand):
                     experience_years=float(cv.experience_years),
                     education=cv.education.name,
                     text_summary=cv.text[:500] if cv.text else "",
+                    pdf_path=cv_pdf_paths.get(cv.cv_id, ""),
                 ),
             )
             cv_objs[cv.cv_id] = obj

@@ -1,3 +1,7 @@
+import { useState, useEffect, useCallback } from "react";
+import { FileText, X } from "lucide-react";
+
+import { apiClient } from "@/lib/api-client";
 import type { LabelingCV } from "@/types/labeling.types";
 
 interface CVPanelProps {
@@ -15,8 +19,35 @@ const SENIORITY_COLOR: Record<string, string> = {
 
 export function CVPanel({ cv }: CVPanelProps) {
   const seniorityClass = SENIORITY_COLOR[cv.seniority] ?? "bg-default-100 text-default-600";
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  const handleOpenPdf = async () => {
+    setPdfLoading(true);
+    try {
+      const res = await apiClient.get<Blob>(`/labeling/cvs/${cv.cv_id}/pdf/`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      setPdfUrl(url);
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
+  const handleClosePdf = useCallback(() => {
+    if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+    setPdfUrl(null);
+  }, [pdfUrl]);
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!pdfUrl) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") handleClosePdf(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pdfUrl, handleClosePdf]);
 
   return (
+    <>
     <div className="rounded-2xl border border-default-200 bg-white p-5 space-y-4 sticky top-4">
       {/* Header */}
       <div>
@@ -25,6 +56,17 @@ export function CVPanel({ cv }: CVPanelProps) {
             {cv.seniority}
           </span>
           <span className="text-xs text-default-500">CV #{cv.cv_id}</span>
+          {cv.pdf_path && (
+            <button
+              type="button"
+              onClick={handleOpenPdf}
+              disabled={pdfLoading}
+              className="ml-auto flex items-center gap-1 rounded-lg border border-default-200 bg-white px-2 py-1 text-xs text-default-600 hover:bg-default-50 disabled:opacity-50 transition-colors"
+            >
+              <FileText className="size-3.5" />
+              {pdfLoading ? "Loading…" : "PDF"}
+            </button>
+          )}
         </div>
         <div className="flex gap-4 text-sm text-default-600 mt-2">
           <span>{cv.experience_years}y exp</span>
@@ -58,5 +100,35 @@ export function CVPanel({ cv }: CVPanelProps) {
         </div>
       )}
     </div>
+
+    {/* PDF Dialog */}
+    {pdfUrl && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        onClick={handleClosePdf}
+      >
+        <div
+          className="relative flex flex-col w-[90vw] h-[90vh] rounded-2xl bg-white overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b border-default-200">
+            <span className="text-sm font-medium text-default-700">CV #{cv.cv_id} — PDF</span>
+            <button
+              type="button"
+              onClick={handleClosePdf}
+              className="rounded-lg p-1.5 text-default-400 hover:bg-default-100 transition-colors"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+          <iframe
+            src={pdfUrl}
+            className="flex-1 w-full"
+            title={`CV #${cv.cv_id} PDF`}
+          />
+        </div>
+      </div>
+    )}
+    </>
   );
 }

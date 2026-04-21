@@ -6,7 +6,7 @@ from .models import HumanLabel, LabelingCV, LabelingJob, PairQueue
 class LabelingCVSerializer(serializers.ModelSerializer):
     class Meta:
         model = LabelingCV
-        fields = ["cv_id", "source", "skills", "seniority", "experience_years", "education", "text_summary"]
+        fields = ["cv_id", "source", "skills", "seniority", "experience_years", "education", "text_summary", "pdf_path"]
 
 
 class LabelingJobSerializer(serializers.ModelSerializer):

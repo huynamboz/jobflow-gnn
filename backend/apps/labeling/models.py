@@ -9,6 +9,7 @@ class LabelingCV(models.Model):
     experience_years = models.FloatField(default=0.0)
     education        = models.CharField(max_length=20, default="BACHELOR")
     text_summary     = models.TextField(default="")
+    pdf_path         = models.CharField(max_length=500, blank=True, default="")
     created_at       = models.DateTimeField(auto_now_add=True)
 
     class Meta:

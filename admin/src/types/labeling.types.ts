@@ -6,6 +6,7 @@ export interface LabelingCV {
   experience_years: number;
   education: string;
   text_summary: string;
+  pdf_path: string;
 }
 
 export interface LabelingJob {
