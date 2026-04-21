@@ -31,6 +31,7 @@ from ml_service.evaluation.per_cv_evaluator import PerCVEvaluator, print_per_cv_
 from ml_service.graph.builder import GraphBuilder
 from ml_service.graph.schema import JobData
 from ml_service.graph.schema import LabeledPair
+from ml_service.inference.checkpoint import save_checkpoint
 from ml_service.training.trainer import Trainer, TrainConfig, make_gnn_hybrid_scorer
 
 _LOG_DIR = Path("logs")
@@ -242,6 +243,18 @@ def main():
     logger.info("Training: %.1fs, best epoch %d, final loss %.4f",
                 time.time() - t_train, result.best_epoch,
                 result.train_losses[-1] if result.train_losses else 0)
+
+    # --- Save checkpoint ---
+    import dataclasses
+    save_checkpoint(
+        path=Path("checkpoints/latest"),
+        model=result.model,
+        data=result.data_clean,
+        cvs=cvs,
+        jobs=jobs,
+        metadata={"train_config": dataclasses.asdict(TRAIN_CONFIG)},
+    )
+    logger.info("Checkpoint saved to checkpoints/latest")
 
     # --- Step 6: Baselines ---
     _print_header("Step 6: Evaluate baselines")

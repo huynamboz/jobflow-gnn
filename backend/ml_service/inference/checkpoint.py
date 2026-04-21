@@ -75,11 +75,15 @@ def load_checkpoint(
         train_cfg = meta.get("train_config", {})
         hidden_channels = train_cfg.get("hidden_channels", hidden_channels)
         num_layers = train_cfg.get("num_layers", num_layers)
+        dropout = train_cfg.get("dropout", 0.0)
+    else:
+        dropout = 0.0
 
     model = HeteroGraphSAGE(
         metadata=metadata,
         hidden_channels=hidden_channels,
         num_layers=num_layers,
+        dropout=dropout,
     )
     model.load_state_dict(torch.load(path / "model.pt", weights_only=True))
     model.eval()
