@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "apps.skills",
     "apps.matching",
     "apps.labeling",
+    "apps.llm",
 ]
 
 # ---------------------------------------------------------------------------

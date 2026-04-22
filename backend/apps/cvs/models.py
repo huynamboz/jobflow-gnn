@@ -32,9 +32,11 @@ class CV(models.Model):
     parsed_text = models.TextField(blank=True, default="")  # cleaned text for embedding
 
     # Parsed fields
+    candidate_name = models.CharField(max_length=200, blank=True, default="")
     seniority = models.IntegerField(choices=Seniority.choices, default=Seniority.MID)
     experience_years = models.FloatField(default=0.0)
     education = models.IntegerField(choices=Education.choices, default=Education.BACHELOR)
+    work_experience = models.JSONField(default=list, blank=True)
 
     # Skills (M2M through CVSkill)
     skills = models.ManyToManyField("skills.Skill", through="CVSkill", blank=True)

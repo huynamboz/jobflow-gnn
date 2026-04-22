@@ -9,6 +9,13 @@ from apps.jobs.admin_views import (
     AdminJobListView,
     AdminPlatformDetailView,
     AdminPlatformListView,
+    JDExtractView,
+    JDSaveView,
+    JDBatchPreviewView,
+    JDBatchListView,
+    JDBatchDetailView,
+    JDBatchCancelView,
+    JDBatchRecordDetailView,
 )
 
 urlpatterns = [
@@ -18,4 +25,11 @@ urlpatterns = [
     path("companies/<int:pk>/", AdminCompanyDetailView.as_view(), name="admin-company-detail"),
     path("jobs/", AdminJobListView.as_view(), name="admin-job-list"),
     path("jobs/<int:pk>/", AdminJobDetailView.as_view(), name="admin-job-detail"),
+    path("jd/extract/", JDExtractView.as_view(), name="admin-jd-extract"),
+    path("jd/save/", JDSaveView.as_view(), name="admin-jd-save"),
+    path("jd/batches/preview/", JDBatchPreviewView.as_view(), name="admin-jd-batch-preview"),
+    path("jd/batches/", JDBatchListView.as_view(), name="admin-jd-batch-list"),
+    path("jd/batches/<int:pk>/", JDBatchDetailView.as_view(), name="admin-jd-batch-detail"),
+    path("jd/batches/<int:pk>/cancel/", JDBatchCancelView.as_view(), name="admin-jd-batch-cancel"),
+    path("jd/batches/<int:pk>/records/<int:record_pk>/", JDBatchRecordDetailView.as_view(), name="admin-jd-batch-record-detail"),
 ]

@@ -1,6 +1,6 @@
 import { apiClient } from "@/lib/api-client";
 import type { ApiSuccess } from "@/types/api.types";
-import type { AdminCVDetail, CVListResponse, CVUploadResult } from "@/types/cv-admin.types";
+import type { AdminCVDetail, CVExtractResult, CVListResponse, CVUploadResult } from "@/types/cv-admin.types";
 
 export interface CVFilters {
   search?: string;
@@ -29,6 +29,18 @@ class CVAdminService {
     const form = new FormData();
     form.append("file", file);
     const res = await apiClient.post<ApiSuccess<CVUploadResult>>("/cvs/upload/", form);
+    return res.data.data;
+  }
+
+  async extractCV(file: File): Promise<CVExtractResult> {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await apiClient.post<ApiSuccess<CVExtractResult>>("/cvs/extract/", form);
+    return res.data.data;
+  }
+
+  async saveCV(data: CVExtractResult): Promise<CVUploadResult> {
+    const res = await apiClient.post<ApiSuccess<CVUploadResult>>("/cvs/save/", data);
     return res.data.data;
   }
 }

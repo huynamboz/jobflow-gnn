@@ -61,3 +61,57 @@ export interface JobListResponse {
   page: number;
   page_size: number;
 }
+
+export interface JDExtractSkill {
+  name: string;
+  importance: number;
+}
+
+export interface JDExtractResult {
+  title: string;
+  company: string;
+  location: string;
+  seniority: number;
+  job_type: string;
+  salary_min: number;
+  salary_max: number;
+  salary_currency: string;
+  salary_type: string;
+  experience_min: number;
+  experience_max: number | null;
+  degree_requirement: number;
+  skills: JDExtractSkill[];
+}
+
+export type BatchStatus = "pending" | "running" | "done" | "error" | "cancelled";
+export type RecordStatus = "pending" | "processing" | "done" | "error";
+
+export interface JDBatch {
+  id: number;
+  file_path: string;
+  fields_config: string[];
+  status: BatchStatus;
+  total: number;
+  done_count: number;
+  error_count: number;
+  created_at: string;
+}
+
+export interface JDBatchRecord {
+  id: number;
+  index: number;
+  status: RecordStatus;
+  error_msg: string;
+  title: string;
+  company: string;
+  result?: JDExtractResult | null;
+  combined_text?: string;
+}
+
+export interface JDBatchDetail {
+  batch: JDBatch;
+  records: JDBatchRecord[];
+  total_records: number;
+  page: number;
+  page_size: number;
+}

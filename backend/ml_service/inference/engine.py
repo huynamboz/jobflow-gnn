@@ -9,6 +9,7 @@ If reranker is not trained, falls back to hybrid scoring (v3).
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -75,6 +76,7 @@ class InferenceEngine:
         normalizer: SkillNormalizer,
         embedding_provider: EmbeddingProvider,
         *,
+        checkpoint_dir: Path | str | None = None,  # FIX 1: replaces hardcoded path
         alpha: float = 0.55,
         beta: float = 0.30,
         gamma: float = 0.15,
@@ -92,9 +94,15 @@ class InferenceEngine:
         self._beta = beta
         self._gamma = gamma
         self._threshold = threshold
+        self._checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else Path("checkpoints/latest")
+        self._inductive_lock = threading.Lock()  # FIX 3: serialize inductive encodes
 
-        # Precompute CV + Job embeddings from GNN
+        # Precompute GNN embeddings (cv + job nodes in graph)
         self._cv_embeddings, self._job_embeddings, self._z_dict = self._precompute_embeddings()
+
+        # FIX 2: Precompute job text embeddings once at startup
+        logger.info("Precomputing text embeddings for %d jobs...", len(jobs))
+        self._job_text_vecs: np.ndarray = embedding_provider.encode([j.text for j in jobs])
 
         # Build skill similarity lookup from co-occurrence graph
         self._skill_similarity = self._build_skill_similarity(cvs, jobs)
@@ -110,12 +118,11 @@ class InferenceEngine:
         # Score calibration (Platt scaling)
         self._calibrator = PlattCalibrator()
 
-        # Try loading saved reranker + calibration
-        ckpt = Path("checkpoints/latest")
-        if (ckpt / "reranker.pt").exists():
-            self._reranker.load(ckpt)
-        if (ckpt / "calibration.json").exists():
-            self._calibrator.load(ckpt)
+        # FIX 1: Load reranker + calibration from correct checkpoint dir
+        if (self._checkpoint_dir / "reranker.pt").exists():
+            self._reranker.load(self._checkpoint_dir)
+        if (self._checkpoint_dir / "calibration.json").exists():
+            self._calibrator.load(self._checkpoint_dir)
 
         logger.info(
             "InferenceEngine ready: %d CVs, %d jobs, %d skill-pairs, reranker=%s",
@@ -140,12 +147,12 @@ class InferenceEngine:
             jobs=jobs,
             normalizer=normalizer,
             embedding_provider=embedding_provider,
+            checkpoint_dir=Path(checkpoint_path),  # FIX 1: pass actual path
             **kwargs,
         )
 
     def match(self, jd_text: str, top_k: int = 10) -> list[MatchResult]:
         """Match a JD text against all CVs. Returns Top K ranked results."""
-        # Extract structured job info from text
         from ml_service.crawler.base import RawJob
 
         raw = RawJob(
@@ -162,7 +169,6 @@ class InferenceEngine:
             logger.warning("No skills extracted from JD text")
             return []
 
-        # Score all CVs
         results: list[MatchResult] = []
         for cv in self._cvs:
             score = self._score_pair(cv, job_data)
@@ -183,7 +189,6 @@ class InferenceEngine:
                 )
             )
 
-        # Sort by score descending, take top K
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_k]
 
@@ -218,10 +223,16 @@ class InferenceEngine:
         """
         cv_skills = set(cv.skills)
 
-        # --- Stage 1: Fast retrieve top N ---
+        # FIX 2: Encode CV text once for the entire request
+        cv_text_vec: np.ndarray = self._embed.encode([cv.text])[0]
+
+        # FIX 2+3: Get GNN embedding once (thread-safe, no per-request self cache)
+        cv_gnn_emb: torch.Tensor | None = self._get_cv_gnn_embedding(cv)
+
+        # --- Stage 1: Fast retrieve top N (no re-encoding) ---
         stage1_scores: list[tuple[int, float]] = []
         for i, job in enumerate(self._jobs):
-            score = self._score_pair(cv, job)
+            score = self._score_pair_fast(cv, job, i, cv_text_vec, cv_gnn_emb)
             stage1_scores.append((i, score))
 
         stage1_scores.sort(key=lambda x: -x[1])
@@ -231,13 +242,12 @@ class InferenceEngine:
         if self._reranker.is_trained:
             cand_indices = [idx for idx, _ in candidates]
             stage1_score_map = {idx: s for idx, s in candidates}
-            # Inject stage1 context (scores + ranks) into feature extractor
             self._feature_extractor.set_stage1_context(
                 [(self._jobs[idx].job_id, s) for idx, s in candidates]
             )
-            # Compute GNN scores for each candidate to pass to reranker
+            # FIX 2: Reuse precomputed vecs for Stage 2 GNN scores (50 candidates)
             gnn_scores_for_candidates = [
-                self._gnn_score_for_job(cv, self._jobs[idx])
+                self._gnn_score_fast(cv, self._jobs[idx], idx, cv_text_vec, cv_gnn_emb)
                 for idx in cand_indices
             ]
             rerank_probs = self._reranker.score_batch(
@@ -247,7 +257,6 @@ class InferenceEngine:
                 cand_indices,
                 gnn_scores=gnn_scores_for_candidates,
             )
-            # Sort by reranker probability (ordering) but keep stage1 score (display)
             reranked = sorted(
                 zip(cand_indices, rerank_probs),
                 key=lambda x: -x[1],
@@ -256,15 +265,13 @@ class InferenceEngine:
         else:
             scored = candidates
 
-        # --- Build results (with calibrated scores) ---
+        # --- Build results (with calibrated scores, sorted by display score) ---
         results: list[JobMatchResult] = []
-        for job_idx, raw_score in scored[:top_k]:
+        for job_idx, raw_score in sorted(scored[:top_k], key=lambda x: -x[1]):
             job = self._jobs[job_idx]
             job_skills = set(job.skills)
             title = job.text.split(".")[0] if job.text else ""
 
-            # Display score = raw Stage 1 score (interpretable)
-            # Calibrated score = used only for eligibility check
             display_score = float(raw_score)
             calibrated = self._calibrator.transform_single(display_score)
             eligible = calibrated >= 0.5 if self._calibrator.is_fitted else display_score >= self._threshold
@@ -302,7 +309,7 @@ class InferenceEngine:
         """Fit Platt calibration on validation scores + labels."""
         self._calibrator.fit(np.array(scores), np.array(labels))
         if self._calibrator.is_fitted:
-            self._calibrator.save(Path("checkpoints/latest"))
+            self._calibrator.save(self._checkpoint_dir)  # FIX 1
 
     def train_reranker(
         self,
@@ -315,7 +322,7 @@ class InferenceEngine:
             self._cvs, self._jobs, cv_indices, job_indices, labels,
         )
         if self._reranker.is_trained:
-            self._reranker.save(Path("checkpoints/latest"))
+            self._reranker.save(self._checkpoint_dir)  # FIX 1
         return metrics
 
     @property
@@ -338,19 +345,96 @@ class InferenceEngine:
     def cv_pool(self) -> list[CVData]:
         return list(self._cvs)
 
+    def replace_job_skills(self, new_jobs: list[JobData]) -> None:
+        """Replace the job pool with updated JobData (e.g. refreshed DB skills).
+
+        GNN embeddings and text vectors are unchanged — only skill-based scoring
+        (semantic overlap, must-have penalty, role classification) is affected.
+        The new_jobs list must have the same job_ids in the same order as job_pool.
+        """
+        if len(new_jobs) != len(self._jobs):
+            raise ValueError(
+                f"new_jobs length {len(new_jobs)} != current pool {len(self._jobs)}"
+            )
+        self._jobs = list(new_jobs)
+
     @property
     def job_pool(self) -> list[JobData]:
         return list(self._jobs)
 
     # ------------------------------------------------------------------
-    # Internal
+    # Internal — fast path (match_cv uses these, no re-encoding)
+    # ------------------------------------------------------------------
+
+    def _get_cv_gnn_embedding(self, cv: CVData) -> torch.Tensor | None:
+        """Get GNN embedding for CV — precomputed if in graph, else inductive.
+
+        FIX 3: Thread-safe via lock. Result is returned to caller (no self cache).
+        """
+        cv_idx = next((i for i, c in enumerate(self._cvs) if c.cv_id == cv.cv_id), None)
+        if cv_idx is not None:
+            return self._cv_embeddings[cv_idx]
+
+        with self._inductive_lock:
+            return self._inductive_gnn_encode_cv(cv)
+
+    def _score_pair_fast(
+        self,
+        cv: CVData,
+        job: JobData,
+        job_idx: int,
+        cv_text_vec: np.ndarray,
+        cv_gnn_emb: torch.Tensor | None,
+    ) -> float:
+        """Hybrid score using precomputed CV vectors — no text re-encoding."""
+        gnn_score = self._gnn_score_fast(cv, job, job_idx, cv_text_vec, cv_gnn_emb)
+        skill_score = self._semantic_skill_overlap(cv, job)
+        dist = abs(int(cv.seniority) - int(job.seniority))
+        seniority_score = max(0.0, 1.0 - dist * 0.4)
+
+        base_score = (
+            self._alpha * gnn_score
+            + self._beta * skill_score
+            + self._gamma * seniority_score
+        )
+
+        cv_role = infer_role(cv.skills, cv.text)
+        job_role = infer_role(job.skills, job.text)
+        penalty = role_match_penalty(cv_role, job_role)
+
+        score = base_score * penalty
+        score = self._apply_must_have_penalty(score, cv, job)
+        score = self._apply_edge_case_penalties(score, cv, job)
+        return score
+
+    def _gnn_score_fast(
+        self,
+        cv: CVData,
+        job: JobData,
+        job_idx: int,
+        cv_text_vec: np.ndarray,
+        cv_gnn_emb: torch.Tensor | None,
+    ) -> float:
+        """GNN + text score using precomputed job text embeddings (no embed calls)."""
+        # FIX 2: use precomputed job text vector
+        job_text_vec = self._job_text_vecs[job_idx]
+        text_sim = self._cosine(cv_text_vec, job_text_vec)
+
+        if cv_gnn_emb is None or self._job_embeddings is None:
+            return text_sim
+
+        job_emb = self._job_embeddings[job_idx]
+        with torch.no_grad():
+            gnn_raw = self._model.decoder(cv_gnn_emb.unsqueeze(0), job_emb.unsqueeze(0)).item()
+        gnn_norm = 1.0 / (1.0 + np.exp(-gnn_raw))
+        return 0.6 * gnn_norm + 0.4 * text_sim
+
+    # ------------------------------------------------------------------
+    # Internal — legacy path (match / match_job_data, JD→CVs direction)
     # ------------------------------------------------------------------
 
     def _precompute_embeddings(self) -> tuple[torch.Tensor, torch.Tensor, dict]:
-        """Run GNN encode once on the full graph.
-
-        Returns (cv_embeddings, job_embeddings, z_dict).
-        """
+        """Run GNN encode once on the full graph."""
         self._model.eval()
         from ml_service.training.trainer import _strip_label_edges
 
@@ -362,38 +446,34 @@ class InferenceEngine:
         return z_dict["cv"], z_dict["job"], z_dict
 
     def _inductive_gnn_encode_cv(self, cv: CVData) -> torch.Tensor | None:
-        """Add new CV as temporary node in graph → run GNN encode → return embedding.
+        """Add new CV as temporary node → GNN encode → return embedding.
 
-        GraphSAGE is inductive: new node only needs edges to existing nodes (Skills, Seniority).
-        After encode, the new CV node has a GNN embedding that captures graph structure.
+        FIX 3: Works on a local copy of the graph — never mutates self._data.
+        Call under self._inductive_lock to avoid wasted parallel work.
         """
         from ml_service.training.trainer import _strip_label_edges
 
         try:
+            # Local copy — attribute assignments below don't touch self._data
             data = _strip_label_edges(self._data)
 
-            # Get existing graph dimensions
             num_cvs = data["cv"].x.shape[0]
             skill_names = sorted(self._normalizer.skill_catalog.keys())
             skill_to_idx = {s: i for i, s in enumerate(skill_names)}
 
-            # Build new CV node features (same as GraphBuilder)
             cv_emb = self._embed.encode([cv.text])  # (1, 384)
-            # Normalize experience/education to match training data range
             cv_extra = np.array([[cv.experience_years / 20.0, float(cv.education) / 4.0]], dtype=np.float32)
-            new_cv_feat = torch.from_numpy(np.concatenate([cv_emb, cv_extra], axis=1))  # (1, 386)
+            new_cv_feat = torch.from_numpy(np.concatenate([cv_emb, cv_extra], axis=1))
 
-            # Append to existing CV nodes
             data["cv"].x = torch.cat([data["cv"].x, new_cv_feat], dim=0)
-            new_cv_idx = num_cvs  # index of the appended node
+            new_cv_idx = num_cvs
 
-            # Add has_skill edges: new CV → Skill nodes
             new_hs_src, new_hs_dst, new_hs_attr = [], [], []
             for skill in cv.skills:
                 if skill in skill_to_idx:
                     new_hs_src.append(new_cv_idx)
                     new_hs_dst.append(skill_to_idx[skill])
-                    new_hs_attr.append(3.0)  # default proficiency
+                    new_hs_attr.append(3.0)
 
             if new_hs_src:
                 old_ei = data["cv", "has_skill", "skill"].edge_index
@@ -403,14 +483,11 @@ class InferenceEngine:
                 data["cv", "has_skill", "skill"].edge_index = torch.cat([old_ei, new_ei], dim=1)
                 data["cv", "has_skill", "skill"].edge_attr = torch.cat([old_attr, new_attr])
 
-            # Add has_seniority edge: new CV → Seniority node
             old_sen_ei = data["cv", "has_seniority", "seniority"].edge_index
             new_sen_ei = torch.tensor([[new_cv_idx], [int(cv.seniority)]], dtype=torch.long)
             data["cv", "has_seniority", "seniority"].edge_index = torch.cat([old_sen_ei, new_sen_ei], dim=1)
 
-            # Add similar_profile edges if they exist
             if ("cv", "similar_profile", "cv") in data.edge_types:
-                # Find similar CVs by skill overlap
                 cv_skills = set(cv.skills)
                 sim_src, sim_dst, sim_attr = [], [], []
                 for i, existing_cv in enumerate(self._cvs):
@@ -430,13 +507,11 @@ class InferenceEngine:
                     data["cv", "similar_profile", "cv"].edge_index = torch.cat([old_sp_ei, new_sp_ei], dim=1)
                     data["cv", "similar_profile", "cv"].edge_attr = torch.cat([old_sp_attr, new_sp_attr])
 
-            # Run GNN encode on expanded graph
             data = prepare_data_for_gnn(data)
             self._model.eval()
             with torch.no_grad():
                 z_dict = self._model.encode(data)
 
-            # Return the embedding of the new CV node (last one)
             return z_dict["cv"][new_cv_idx]
 
         except Exception as e:
@@ -444,11 +519,7 @@ class InferenceEngine:
             return None
 
     def _gnn_score_for_job(self, cv: CVData, job: JobData) -> float:
-        """Compute GNN-based score between CV and Job.
-
-        For new CVs: inductive inference (add to graph → encode → decode).
-        For existing CVs: use precomputed embeddings.
-        """
+        """GNN score used by the JD→CVs match() path (legacy, may re-encode text)."""
         job_idx = next(
             (i for i, j in enumerate(self._jobs) if j.job_id == job.job_id),
             None,
@@ -456,42 +527,37 @@ class InferenceEngine:
         if job_idx is None or self._job_embeddings is None:
             return self._text_similarity(cv, job)
 
-        # Check if CV is already in graph
         cv_idx = next(
             (i for i, c in enumerate(self._cvs) if c.cv_id == cv.cv_id),
             None,
         )
 
         if cv_idx is not None:
-            # Existing CV → use precomputed decode
             cv_idx_t = torch.tensor([cv_idx], dtype=torch.long)
             job_idx_t = torch.tensor([job_idx], dtype=torch.long)
             with torch.no_grad():
                 gnn_raw = self._model.decode(self._z_dict, cv_idx_t, job_idx_t).item()
             gnn_norm = 1.0 / (1.0 + np.exp(-gnn_raw))
-            text_sim = self._text_similarity(cv, job)
+            # Use precomputed job text vec to avoid re-encoding job text
+            cv_text_vec = self._embed.encode([cv.text])[0]
+            job_text_vec = self._job_text_vecs[job_idx]
+            text_sim = self._cosine(cv_text_vec, job_text_vec)
             return 0.6 * gnn_norm + 0.4 * text_sim
 
-        # New CV → inductive inference
-        if not hasattr(self, "_inductive_cache"):
-            self._inductive_cache = {}
-
-        cache_key = id(cv)
-        if cache_key not in self._inductive_cache:
+        # New CV in legacy path: inductive encode without caching on self
+        with self._inductive_lock:
             cv_emb = self._inductive_gnn_encode_cv(cv)
-            self._inductive_cache = {cache_key: cv_emb}  # single-entry cache
 
-        cv_emb = self._inductive_cache.get(cache_key)
         if cv_emb is not None:
-            # Use GNN decoder: score = MLP(concat(cv_emb, job_emb))
             job_emb = self._job_embeddings[job_idx]
             with torch.no_grad():
                 gnn_raw = self._model.decoder(cv_emb.unsqueeze(0), job_emb.unsqueeze(0)).item()
             gnn_norm = 1.0 / (1.0 + np.exp(-gnn_raw))
-            text_sim = self._text_similarity(cv, job)
+            cv_text_vec = self._embed.encode([cv.text])[0]
+            job_text_vec = self._job_text_vecs[job_idx]
+            text_sim = self._cosine(cv_text_vec, job_text_vec)
             return 0.6 * gnn_norm + 0.4 * text_sim
 
-        # Fallback
         return self._text_similarity(cv, job)
 
     @staticmethod
@@ -502,21 +568,9 @@ class InferenceEngine:
         return float((np.dot(a, b) / (na * nb) + 1.0) / 2.0)
 
     def _score_pair(self, cv: CVData, job: JobData) -> float:
-        """Hybrid score with GNN, semantic skills, penalties.
-
-        Components:
-        1. GNN score (α=0.55) — real GNN decode if both in graph, else text similarity
-        2. Semantic skill overlap (β=0.30) — weighted + related skills from graph
-        3. Seniority match (γ=0.15) — stricter penalty
-        4. Must-have penalty — cap score if missing required skills
-        5. Role penalty — mismatch between CV role and JD role
-        """
+        """Hybrid score — used by legacy JD→CVs match() path."""
         gnn_score = self._gnn_score_for_job(cv, job)
-
-        # Semantic skill overlap: direct + related skills via graph
         skill_score = self._semantic_skill_overlap(cv, job)
-
-        # Seniority: stricter penalty (0.4 per level)
         dist = abs(int(cv.seniority) - int(job.seniority))
         seniority_score = max(0.0, 1.0 - dist * 0.4)
 
@@ -526,29 +580,17 @@ class InferenceEngine:
             + self._gamma * seniority_score
         )
 
-        # Role penalty
         cv_role = infer_role(cv.skills, cv.text)
         job_role = infer_role(job.skills, job.text)
         penalty = role_match_penalty(cv_role, job_role)
 
         score = base_score * penalty
-
-        # Must-have penalty: cap score if missing high-importance skills
         score = self._apply_must_have_penalty(score, cv, job)
-
-        # Edge case penalties
         score = self._apply_edge_case_penalties(score, cv, job)
-
         return score
 
     def _semantic_skill_overlap(self, cv: CVData, job: JobData) -> float:
-        """Skill overlap with semantic matching via skill graph.
-
-        For each required JD skill:
-        - Direct match in CV → full importance credit
-        - Related skill in CV (via co-occurrence graph) → partial credit (0.3-0.6)
-        - No match → 0
-        """
+        """Skill overlap with semantic matching via skill graph."""
         if not job.skills:
             return 0.0
 
@@ -560,17 +602,14 @@ class InferenceEngine:
             total_weight += importance
 
             if skill in cv_set:
-                # Direct match → full credit
                 matched_weight += importance
             else:
-                # Check related skills via graph
                 best_sim = 0.0
                 for cv_skill in cv_set:
                     pair = (min(skill, cv_skill), max(skill, cv_skill))
                     sim = self._skill_similarity.get(pair, 0.0)
                     best_sim = max(best_sim, sim)
                 if best_sim > 0:
-                    # Partial credit: 30-60% of importance based on similarity
                     matched_weight += importance * best_sim * 0.6
 
         if total_weight == 0:
@@ -579,11 +618,7 @@ class InferenceEngine:
 
     @staticmethod
     def _apply_must_have_penalty(score: float, cv: CVData, job: JobData) -> float:
-        """Penalize score if CV is missing high-importance (required) skills.
-
-        Skills with importance >= 4 are considered "must-have".
-        Multiplicative penalty to preserve score variance (not hard cap).
-        """
+        """Penalize score if CV is missing high-importance (required) skills."""
         if not job.skills:
             return score
 
@@ -603,30 +638,24 @@ class InferenceEngine:
 
     @staticmethod
     def _apply_edge_case_penalties(score: float, cv: CVData, job: JobData) -> float:
-        """Apply penalties for edge cases.
-
-        1. Generic CV: too few distinctive skills → penalty
-        2. Overqualified: senior applying to intern/junior → penalty
-        3. Tool-heavy match: matched only tools (git, jira) not core skills → penalty
-        """
+        """Apply penalties for generic CV, overqualification, tool-only match, sparse job skills."""
         cv_set = set(cv.skills)
         job_set = set(job.skills)
         intersection = cv_set & job_set
 
-        # 1. Generic CV: fewer than 4 skills → likely matches everything poorly
         if len(cv_set) < 4:
             score *= 0.85
 
-        # 2. Overqualified: senior/lead CV for intern/junior job
         cv_level = int(cv.seniority)
         job_level = int(job.seniority)
-        if cv_level >= 3 and job_level <= 1:  # senior+ applying to junior/intern
+        if cv_level >= 3 and job_level <= 1:
             score *= 0.8
 
-        # 3. Tool-heavy match: if all matched skills are tools (category=2), penalize
-        # because matching only git+jira is not a real match
+        # Sparse job: < 3 skills → skill_overlap is noise, can't trust the signal
+        if len(job_set) < 3:
+            score *= 0.8
+
         if intersection:
-            # Check how many matched skills are tools vs technical
             _TOOL_SKILLS = {
                 "git", "jira", "confluence", "docker", "jenkins",
                 "ci_cd", "npm", "vite", "webpack",
@@ -634,7 +663,7 @@ class InferenceEngine:
             tool_matches = intersection & _TOOL_SKILLS
             core_matches = intersection - _TOOL_SKILLS
             if len(tool_matches) > 0 and len(core_matches) == 0:
-                score *= 0.75  # only tools matched, no core skills
+                score *= 0.75
 
         return score
 
@@ -642,15 +671,11 @@ class InferenceEngine:
     def _build_skill_similarity(
         cvs: list[CVData], jobs: list[JobData],
     ) -> dict[tuple[str, str], float]:
-        """Build skill-pair similarity lookup from co-occurrence PMI.
-
-        Returns dict of (skill_a, skill_b) → normalized similarity (0-1).
-        """
+        """Build skill-pair similarity lookup from co-occurrence PMI."""
         cooccurrence = build_skill_cooccurrence(cvs, jobs)
         if not cooccurrence:
             return {}
 
-        # Normalize PMI to 0-1
         max_pmi = max(cooccurrence.values())
         min_pmi = min(cooccurrence.values())
         rng = max_pmi - min_pmi if max_pmi > min_pmi else 1.0
@@ -661,13 +686,7 @@ class InferenceEngine:
         }
 
     def _text_similarity(self, cv: CVData, job: JobData) -> float:
-        """Cosine similarity between CV and JD text embeddings."""
+        """Cosine similarity between CV and JD text embeddings (re-encodes both)."""
         vecs = self._embed.encode([cv.text, job.text])
         cv_vec, job_vec = vecs[0], vecs[1]
-        norm_cv = np.linalg.norm(cv_vec)
-        norm_job = np.linalg.norm(job_vec)
-        if norm_cv == 0 or norm_job == 0:
-            return 0.0
-        sim = float(np.dot(cv_vec, job_vec) / (norm_cv * norm_job))
-        # Normalize from [-1,1] to [0,1]
-        return (sim + 1.0) / 2.0
+        return self._cosine(cv_vec, job_vec)

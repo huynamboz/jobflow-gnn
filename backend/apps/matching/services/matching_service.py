@@ -41,7 +41,67 @@ def _get_engine():
             embedding_provider=provider,
         )
         logger.info("ML engine ready: %d CVs, %d jobs", _engine.num_cvs, _engine.num_jobs)
+
+        # Override checkpoint job skills with DB canonical skills (more accurate)
+        try:
+            _refresh_job_skills_from_db(_engine)
+        except Exception as e:
+            logger.warning("Job skill refresh skipped: %s", e)
+
         return _engine
+
+
+def _refresh_job_skills_from_db(engine) -> None:
+    """Replace checkpoint job skills with DB-stored canonical skills.
+
+    The checkpoint's SkillExtractor can miss or mis-extract skills from job
+    descriptions. The DB stores canonical_name skills (via JobSkill M2M) that
+    were extracted and normalised when the job was crawled, giving more accurate
+    skill data for scoring without needing to retrain.
+    """
+    from apps.jobs.models import JobSkill
+    from ml_service.graph.schema import JobData
+
+    job_ids = [j.job_id for j in engine.job_pool]
+    if not job_ids:
+        return
+
+    # One query: all skill entries for all jobs in pool
+    skill_rows = (
+        JobSkill.objects
+        .filter(job_id__in=job_ids)
+        .select_related("skill")
+        .values_list("job_id", "skill__canonical_name", "importance")
+    )
+
+    db_skills: dict[int, list[tuple[str, int]]] = {}
+    for job_id, canonical, importance in skill_rows:
+        db_skills.setdefault(job_id, []).append((canonical, importance))
+
+    if not db_skills:
+        logger.info("DB has no skills for engine job pool — keeping checkpoint skills.")
+        return
+
+    updated = 0
+    new_jobs = []
+    for job in engine.job_pool:
+        entries = db_skills.get(job.job_id)
+        if entries:
+            new_jobs.append(JobData(
+                job_id=job.job_id,
+                seniority=job.seniority,
+                skills=tuple(s for s, _ in entries),
+                skill_importances=tuple(i for _, i in entries),
+                salary_min=job.salary_min,
+                salary_max=job.salary_max,
+                text=job.text,
+            ))
+            updated += 1
+        else:
+            new_jobs.append(job)
+
+    engine.replace_job_skills(new_jobs)
+    logger.info("Refreshed DB skills for %d/%d jobs.", updated, len(new_jobs))
 
 
 def _get_parser():
@@ -62,6 +122,25 @@ def _get_parser():
         return _parser
 
 
+_SOFT_SKILLS = frozenset({
+    "communication", "teamwork", "leadership", "problem_solving",
+    "time_management", "agile", "security",
+})
+
+
+def _clean_title(raw: str) -> str:
+    """Return first non-empty line of title (strips LinkedIn card metadata)."""
+    for line in raw.splitlines():
+        line = line.strip()
+        if line:
+            return line
+    return raw.strip()
+
+
+def _filter_soft_skills(skills: list[str]) -> list[str]:
+    return [s for s in skills if s not in _SOFT_SKILLS]
+
+
 def _enrich(results) -> list[dict]:
     """Enrich raw match results with DB job fields."""
     from apps.jobs.models import Job
@@ -74,14 +153,15 @@ def _enrich(results) -> list[dict]:
     enriched = []
     for r in results:
         j = db_jobs.get(r.job_id)
+        raw_title = j.title if j else r.title
         enriched.append({
             "job_id": r.job_id,
             "score": r.score,
             "eligible": r.eligible,
-            "matched_skills": list(r.matched_skills),
-            "missing_skills": list(r.missing_skills),
+            "matched_skills": _filter_soft_skills(list(r.matched_skills)),
+            "missing_skills": _filter_soft_skills(list(r.missing_skills)),
             "seniority_match": r.seniority_match,
-            "title": j.title if j else r.title,
+            "title": _clean_title(raw_title),
             "company_name": j.company.name if j and j.company else "",
             "location": j.location if j else "",
             "job_type": j.job_type if j else "",

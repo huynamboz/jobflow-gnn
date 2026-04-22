@@ -10,13 +10,14 @@ import re
 
 # Role → defining skills (if >= 2 match, assign this role)
 _ROLE_SKILLS: dict[str, set[str]] = {
-    "frontend": {"react", "vuejs", "angular", "nextjs", "html_css", "tailwind", "sass", "bootstrap", "redux", "typescript", "javascript", "css", "html", "vite", "webpack"},
-    "backend": {"django", "fastapi", "flask", "spring", "express", "nestjs", "nodejs", "laravel", "rails", "postgresql", "mysql", "mongodb", "redis", "kafka", "rabbitmq", "grpc", "graphql"},
+    "frontend": {"react", "vuejs", "angular", "nextjs", "html_css", "tailwind", "sass", "bootstrap", "redux", "typescript", "javascript", "css", "html", "vite", "webpack", "nuxtjs"},
+    "backend": {"django", "fastapi", "flask", "spring", "express", "nestjs", "nodejs", "laravel", "rails", "postgresql", "mysql", "mongodb", "redis", "kafka", "rabbitmq", "grpc", "graphql", "java", "python", "golang", "csharp", "dotnet", "php", "ruby", "scala", "kotlin", "hibernate", "jpa", "rest_api", "microservices"},
     "devops": {"docker", "kubernetes", "terraform", "ansible", "ci_cd", "aws", "gcp", "azure", "helm", "argocd", "prometheus", "grafana", "jenkins", "nginx", "linux"},
-    "data": {"spark", "airflow", "hadoop", "hive", "flink", "snowflake", "databricks", "dbt", "bigquery", "pandas", "numpy", "data_engineering", "data_science", "etl"},
+    "data": {"spark", "airflow", "hadoop", "hive", "flink", "snowflake", "databricks", "dbt", "bigquery", "pandas", "numpy", "data_engineering", "data_science", "etl", "sql", "tableau", "powerbi"},
     "ml": {"machine_learning", "deep_learning", "pytorch", "tensorflow", "scikit_learn", "nlp", "computer_vision", "llm", "xgboost", "mlflow", "sagemaker", "langchain"},
     "mobile": {"react_native", "flutter", "ios", "android", "swift", "kotlin"},
-    "security": {"security", "cybersecurity"},
+    "security": {"security", "cybersecurity", "penetration_testing", "soc", "siem"},
+    "erp": {"sap", "oracle_erp", "salesforce", "dynamics365", "workday", "servicenow"},
 }
 
 # Role → title keywords
@@ -29,6 +30,7 @@ _ROLE_TITLE_PATTERNS: dict[str, re.Pattern] = {
     "ml": re.compile(r"\b(?:machine\s+learning|ml\b|ai\b|deep\s+learning|nlp|computer\s+vision)\b", re.I),
     "mobile": re.compile(r"\b(?:mobile|ios|android|react\s+native|flutter)\b", re.I),
     "security": re.compile(r"\b(?:security|cyber|penetration|soc)\b", re.I),
+    "erp": re.compile(r"\b(?:sap|salesforce|oracle\s+erp|workday|dynamics|servicenow|crm\s+consultant|erp\s+consultant)\b", re.I),
 }
 
 # Roles that are compatible (no penalty between them)
@@ -41,6 +43,7 @@ _COMPATIBLE_ROLES: dict[str, set[str]] = {
     "ml": {"ml", "data"},
     "mobile": {"mobile", "frontend"},
     "security": {"security", "devops", "backend"},
+    "erp": {"erp"},
     "other": set(),  # compatible with everything
 }
 
@@ -74,13 +77,26 @@ def infer_role(skills: tuple[str, ...] | set[str], text: str = "") -> str:
     return max(scores, key=lambda r: scores[r])
 
 
+# Roles with moderate overlap — partial penalty
+_ADJACENT_ROLES: dict[str, set[str]] = {
+    "frontend": {"backend", "fullstack"},
+    "backend": {"frontend", "fullstack", "devops"},
+    "fullstack": {"frontend", "backend", "devops"},
+    "devops": {"backend", "fullstack"},
+    "data": {"ml", "backend"},
+    "ml": {"data", "backend"},
+    "mobile": {"frontend", "fullstack"},
+    "security": {"devops", "backend"},
+}
+
+
 def role_match_penalty(cv_role: str, job_role: str) -> float:
     """Penalty multiplier for role mismatch.
 
     Returns:
-        1.0  — same role or compatible → no penalty
-        0.7  — partial mismatch (e.g., frontend vs data)
-        0.5  — strong mismatch (e.g., frontend vs security)
+        1.0  — same role or compatible (e.g. frontend↔fullstack)
+        0.7  — adjacent roles (e.g. frontend↔backend, data↔ml)
+        0.45 — clear mismatch (e.g. frontend↔devops, frontend↔data)
     """
     if cv_role == "other" or job_role == "other":
         return 1.0  # can't determine → no penalty
@@ -92,9 +108,18 @@ def role_match_penalty(cv_role: str, job_role: str) -> float:
     if job_role in compatible:
         return 1.0
 
-    # Partial compatibility check (reverse)
     reverse_compatible = _COMPATIBLE_ROLES.get(job_role, set())
     if cv_role in reverse_compatible:
         return 1.0
 
-    return 0.7
+    # Adjacent roles — partial penalty
+    adjacent = _ADJACENT_ROLES.get(cv_role, set())
+    if job_role in adjacent:
+        return 0.7
+
+    reverse_adjacent = _ADJACENT_ROLES.get(job_role, set())
+    if cv_role in reverse_adjacent:
+        return 0.7
+
+    # Clear mismatch (e.g. frontend vs data/ml/security/devops)
+    return 0.45

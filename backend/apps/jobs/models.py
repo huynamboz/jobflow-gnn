@@ -128,3 +128,61 @@ class JobSkill(models.Model):
     class Meta:
         db_table = "job_skills"
         unique_together = ("job", "skill")
+
+
+class JDExtractionBatch(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_RUNNING = "running"
+    STATUS_DONE = "done"
+    STATUS_ERROR = "error"
+    STATUS_CANCELLED = "cancelled"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_RUNNING, "Running"),
+        (STATUS_DONE, "Done"),
+        (STATUS_ERROR, "Error"),
+        (STATUS_CANCELLED, "Cancelled"),
+    ]
+
+    file_path = models.CharField(max_length=1000)
+    fields_config = models.JSONField(default=list)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    total = models.IntegerField(default=0)
+    done_count = models.IntegerField(default=0)
+    error_count = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "jd_extraction_batches"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Batch #{self.id} ({self.status})"
+
+
+class JDExtractionRecord(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_PROCESSING = "processing"
+    STATUS_DONE = "done"
+    STATUS_ERROR = "error"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_PROCESSING, "Processing"),
+        (STATUS_DONE, "Done"),
+        (STATUS_ERROR, "Error"),
+    ]
+
+    batch = models.ForeignKey(JDExtractionBatch, on_delete=models.CASCADE, related_name="records")
+    index = models.IntegerField()
+    raw_data = models.JSONField(default=dict)
+    combined_text = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    result = models.JSONField(null=True, blank=True)
+    error_msg = models.CharField(max_length=500, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "jd_extraction_records"
+        ordering = ["index"]
