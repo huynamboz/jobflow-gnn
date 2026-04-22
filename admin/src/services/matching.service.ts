@@ -12,7 +12,7 @@ class MatchingService {
     form.append("file", file);
     form.append("top_k", String(topK));
     const res = await apiClient.post<MatchResponse>("/matching/cv/upload/", form, {
-      headers: { "Content-Type": "multipart/form-data" },
+      headers: { "Content-Type": undefined },
     });
     return res.data.data;
   }

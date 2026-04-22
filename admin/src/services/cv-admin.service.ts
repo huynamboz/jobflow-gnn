@@ -29,7 +29,7 @@ class CVAdminService {
     const form = new FormData();
     form.append("file", file);
     const res = await apiClient.post<ApiSuccess<CVUploadResult>>("/cvs/upload/", form, {
-      headers: { "Content-Type": "multipart/form-data" },
+      headers: { "Content-Type": undefined },
     });
     return res.data.data;
   }
