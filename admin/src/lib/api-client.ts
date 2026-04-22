@@ -57,11 +57,15 @@ function processQueue(error: unknown): void {
   failedQueue.length = 0;
 }
 
-// Request interceptor: attach token
+// Request interceptor: attach token + handle FormData
 client.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = getAccessToken();
     if (token && config.headers) config.headers.Authorization = `Bearer ${token}`;
+    // Let browser set Content-Type with boundary for multipart
+    if (config.data instanceof FormData) {
+      delete config.headers["Content-Type"];
+    }
     return config;
   },
   (error) => Promise.reject(error),

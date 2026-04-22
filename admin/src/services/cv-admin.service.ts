@@ -28,9 +28,7 @@ class CVAdminService {
   async uploadCV(file: File): Promise<CVUploadResult> {
     const form = new FormData();
     form.append("file", file);
-    const res = await apiClient.post<ApiSuccess<CVUploadResult>>("/cvs/upload/", form, {
-      headers: { "Content-Type": undefined },
-    });
+    const res = await apiClient.post<ApiSuccess<CVUploadResult>>("/cvs/upload/", form);
     return res.data.data;
   }
 }

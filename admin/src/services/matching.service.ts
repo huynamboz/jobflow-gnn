@@ -11,9 +11,7 @@ class MatchingService {
     const form = new FormData();
     form.append("file", file);
     form.append("top_k", String(topK));
-    const res = await apiClient.post<MatchResponse>("/matching/cv/upload/", form, {
-      headers: { "Content-Type": undefined },
-    });
+    const res = await apiClient.post<MatchResponse>("/matching/cv/upload/", form);
     return res.data.data;
   }
 }
