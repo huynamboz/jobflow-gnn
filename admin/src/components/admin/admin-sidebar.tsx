@@ -1,12 +1,76 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { ScrollShadow } from "@heroui/scroll-shadow";
-import { LogOut, X } from "lucide-react";
-import { clsx } from "clsx";
+import { useState } from "react";
+import {
+  IconBrain,
+  IconBriefcase,
+  IconChevronDown,
+  IconClipboardList,
+  IconFiles,
+  IconFileStack,
+  IconLayoutDashboard,
+  IconLogout,
+  IconRobot,
+  IconScan,
+  IconSettings,
+  IconSparkles,
+  IconTags,
+  IconX,
+} from "@tabler/icons-react";
 
-import { adminConfig } from "@/config/admin";
 import { useAuthStore } from "@/stores/auth.store";
 
-const SIDEBAR_WIDTH = 256;
+const SIDEBAR_WIDTH = 272;
+
+// Design tokens matching the batch page
+const T = {
+  bg:        "oklch(0.985 0.004 85)",
+  surface:   "#ffffff",
+  surface2:  "oklch(0.97 0.005 85)",
+  line:      "oklch(0.92 0.006 85)",
+  ink:       "oklch(0.18 0.02 265)",
+  ink2:      "oklch(0.38 0.015 265)",
+  ink3:      "oklch(0.56 0.012 265)",
+  ink4:      "oklch(0.72 0.008 265)",
+  accent:    "oklch(0.55 0.20 240)",
+  accent600: "oklch(0.48 0.20 240)",
+  accent50:  "oklch(0.97 0.03 240)",
+};
+
+type NavItem = { label: string; href: string; icon: React.ElementType; count?: number };
+type NavSection = { title: string; items: NavItem[] };
+
+const NAV_SECTIONS: NavSection[] = [
+  {
+    title: "General",
+    items: [
+      { label: "Dashboard", href: "/admin", icon: IconLayoutDashboard },
+      { label: "Labeling",  href: "/admin/labeling", icon: IconTags },
+      { label: "Models",    href: "/admin/models",   icon: IconBrain },
+    ],
+  },
+  {
+    title: "Data",
+    items: [
+      { label: "Jobs", href: "/admin/jobs", icon: IconBriefcase },
+      { label: "CVs",  href: "/admin/cvs",  icon: IconFiles },
+    ],
+  },
+  {
+    title: "AI",
+    items: [
+      { label: "Recommend",      href: "/admin/recommend",     icon: IconSparkles },
+      { label: "LLM Providers",  href: "/admin/llm-providers", icon: IconRobot },
+      { label: "LLM Logs",       href: "/admin/llm-logs",      icon: IconClipboardList },
+    ],
+  },
+  {
+    title: "Extraction",
+    items: [
+      { label: "JD Extract", href: "/admin/jd-extract", icon: IconScan },
+      { label: "JD Batch",   href: "/admin/jd-batch",   icon: IconFileStack },
+    ],
+  },
+];
 
 export interface AdminSidebarProps {
   isOpen?: boolean;
@@ -16,6 +80,13 @@ export interface AdminSidebarProps {
 export function AdminSidebar({ isOpen = true, onClose }: AdminSidebarProps) {
   const location = useLocation();
   const logout = useAuthStore((state) => state.logout);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  const toggleSection = (title: string) =>
+    setCollapsed((prev) => ({ ...prev, [title]: !prev[title] }));
+
+  const isActive = (href: string) =>
+    href === "/admin" ? location.pathname === "/admin" : location.pathname.startsWith(href);
 
   return (
     <>
@@ -27,77 +98,172 @@ export function AdminSidebar({ isOpen = true, onClose }: AdminSidebarProps) {
           onClick={onClose}
         />
       )}
+
       <aside
-        className={clsx(
-          "fixed left-0 top-0 z-50 h-full flex flex-col",
-          "bg-[#0f172a] text-white",
-          "transition-transform duration-200 ease-out lg:translate-x-0",
-          isOpen ? "translate-x-0" : "-translate-x-full",
-        )}
-        style={{ width: SIDEBAR_WIDTH }}
+        style={{
+          width: SIDEBAR_WIDTH,
+          background: T.bg,
+          borderRight: `1px solid ${T.line}`,
+          display: "flex",
+          flexDirection: "column",
+          padding: "20px 16px 24px",
+          gap: 18,
+          position: "fixed",
+          left: 0,
+          top: 0,
+          height: "100vh",
+          zIndex: 50,
+          transition: "transform 0.2s ease-out",
+        }}
+        className={isOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
       >
-        {/* Logo */}
-        <div className="flex h-16 shrink-0 items-center justify-between px-5">
-          <NavLink className="flex items-center gap-2.5" to="/admin">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500">
-              <span className="text-sm font-bold text-white">J</span>
+        {/* Brand */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px 10px", fontWeight: 800, letterSpacing: "-0.02em", fontSize: 17 }}>
+          <NavLink to="/admin" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", color: T.ink }}>
+            <div style={{
+              width: 30, height: 30, borderRadius: 10,
+              background: T.ink, color: "#fff",
+              display: "grid", placeItems: "center",
+              fontWeight: 800, fontSize: 14,
+              position: "relative", overflow: "hidden",
+            }}>
+              <span style={{
+                position: "absolute", inset: 0,
+                background: `radial-gradient(circle at 70% 30%, ${T.accent}, transparent 60%)`,
+                opacity: 0.9,
+              }} />
+              <span style={{ position: "relative", zIndex: 1 }}>J</span>
             </div>
-            <span className="text-lg font-semibold text-white">JobFlow</span>
+            <div style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
+              <span style={{ color: T.ink }}>jobflow</span>
+              <span style={{ fontSize: 10.5, fontWeight: 500, color: T.ink4, marginTop: 3, letterSpacing: "0.01em" }}>HR data platform</span>
+            </div>
           </NavLink>
+
           <button
-            className="rounded-md p-1 text-gray-400 transition-colors hover:text-white lg:hidden"
             type="button"
             onClick={onClose}
+            style={{
+              marginLeft: "auto", background: "transparent", border: "none",
+              cursor: "pointer", color: T.ink3, display: "flex", alignItems: "center",
+            }}
+            className="lg:hidden"
           >
-            <X className="size-5" />
+            <IconX size={20} />
           </button>
         </div>
 
         {/* Nav */}
-        <ScrollShadow className="-mr-1 flex-1 py-2 pr-1">
-          {adminConfig.navSections.map((section) => (
-            <div key={section.title} className="mb-2 px-4">
-              <p className="mb-2 mt-4 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                {section.title}
-              </p>
-              <nav className="flex flex-col gap-0.5">
-                {section.items.map((item) => {
-                  const isActive =
-                    item.href === "/admin"
-                      ? location.pathname === "/admin"
-                      : location.pathname.startsWith(item.href);
-                  const Icon = item.icon;
+        <div style={{ flex: 1, overflow: "auto", marginRight: -6, paddingRight: 6, display: "flex", flexDirection: "column", gap: 10 }}>
+          {NAV_SECTIONS.map((section) => {
+            const open = !collapsed[section.title];
+            return (
+              <div key={section.title} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <button
+                  type="button"
+                  onClick={() => toggleSection(section.title)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "6px 10px 4px",
+                    fontSize: 10.5, fontWeight: 700, color: T.ink4,
+                    textTransform: "uppercase", letterSpacing: "0.1em",
+                    background: "transparent", border: "none", cursor: "pointer",
+                    textAlign: "left", width: "100%",
+                  }}
+                >
+                  {section.title}
+                  <IconChevronDown
+                    size={10}
+                    style={{
+                      marginLeft: "auto",
+                      transform: open ? "rotate(0deg)" : "rotate(-90deg)",
+                      transition: "transform 0.15s",
+                      color: T.ink4,
+                    }}
+                  />
+                </button>
 
+                {open && section.items.map((item) => {
+                  const active = isActive(item.href);
+                  const Icon = item.icon;
                   return (
                     <NavLink
                       key={item.href}
-                      className={clsx(
-                        "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-150",
-                        isActive
-                          ? "bg-white/10 text-white"
-                          : "text-gray-400 hover:bg-white/5 hover:text-gray-200",
-                      )}
                       to={item.href}
                       onClick={() => onClose?.()}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10,
+                        padding: "8px 10px", borderRadius: 12,
+                        color: active ? T.ink : T.ink2,
+                        background: active ? "rgba(0,0,0,0.07)" : "transparent",
+                        fontWeight: active ? 600 : 500, fontSize: 13.5,
+                        textDecoration: "none",
+                        transition: "background 0.14s, color 0.14s",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!active) {
+                          e.currentTarget.style.background = "rgba(0,0,0,0.04)";
+                          e.currentTarget.style.color = T.ink;
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!active) {
+                          e.currentTarget.style.background = "transparent";
+                          e.currentTarget.style.color = T.ink2;
+                        }
+                      }}
                     >
-                      <Icon className="size-[18px] shrink-0" />
-                      {item.label}
+                      <Icon
+                        size={16}
+                        style={{ color: active ? T.ink2 : T.ink4, flexShrink: 0 }}
+                      />
+                      <span>{item.label}</span>
+                      {item.count != null && (
+                        <span style={{
+                          marginLeft: "auto",
+                          fontSize: 11, fontWeight: 600,
+                          background: T.surface2,
+                          color: T.ink3,
+                          padding: "2px 7px", borderRadius: 999,
+                        }}>
+                          {item.count.toLocaleString()}
+                        </span>
+                      )}
                     </NavLink>
                   );
                 })}
-              </nav>
-            </div>
-          ))}
-        </ScrollShadow>
+              </div>
+            );
+          })}
+        </div>
 
-        {/* Logout */}
-        <div className="shrink-0 border-t border-white/10 p-4">
+        {/* Footer */}
+        <div style={{ borderTop: `1px solid ${T.line}`, paddingTop: 10, display: "flex", flexDirection: "column", gap: 2 }}>
+          <NavLink
+            to="/admin/settings"
+            onClick={() => onClose?.()}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 12, color: T.ink2, fontWeight: 500, fontSize: 13.5, textDecoration: "none" }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = T.surface2; e.currentTarget.style.color = T.ink; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = T.ink2; }}
+          >
+            <IconSettings size={16} style={{ flexShrink: 0 }} />
+            Settings
+          </NavLink>
+
           <button
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium text-gray-400 transition-all hover:bg-white/5 hover:text-gray-200"
             type="button"
             onClick={logout}
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "8px 10px", borderRadius: 12,
+              background: "transparent", border: "none",
+              color: T.ink2, fontWeight: 500, fontSize: 13.5,
+              cursor: "pointer", textAlign: "left", width: "100%",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = T.surface2; e.currentTarget.style.color = T.ink; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = T.ink2; }}
           >
-            <LogOut className="size-[18px] shrink-0" />
+            <IconLogout size={16} style={{ flexShrink: 0 }} />
             Logout
           </button>
         </div>

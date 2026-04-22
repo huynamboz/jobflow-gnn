@@ -8,12 +8,12 @@ export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa] dark:bg-default-100">
+    <div className="min-h-screen bg-white">
       <AdminSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
-      <div className="flex flex-col min-h-screen transition-[margin] duration-200 lg:ml-[256px]">
+      <div className="flex flex-col min-h-screen transition-[margin] duration-200 lg:ml-[272px]">
         <div className="sticky top-0 z-30 shrink-0">
           <AdminHeader onMenuClick={() => setSidebarOpen((v) => !v)} />
         </div>
