@@ -15,6 +15,13 @@ _PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "jd_extraction.md"
 
 VALID_JOB_TYPES = {"full-time", "part-time", "contract", "remote", "hybrid", "on-site"}
 VALID_SALARY_TYPES = {"hourly", "monthly", "annual", "unknown"}
+VALID_ROLE_CATEGORIES = {
+    "backend", "frontend", "fullstack", "mobile", "devops",
+    "data_ml", "data_eng", "qa", "design", "ba", "other",
+}
+
+# Default experience_years when seniority is known but years = 0
+SENIORITY_DEFAULT_YEARS = {2: 3.5, 3: 6.5, 4: 10.0, 5: 14.0}
 
 
 @dataclass
@@ -22,15 +29,19 @@ class JDExtractResult:
     title: str = ""
     company: str = ""
     location: str = ""
+    is_remote: bool = False
     seniority: int = 2
+    role_category: str = "other"
     job_type: str = "full-time"
     salary_min: int = 0
     salary_max: int = 0
     salary_currency: str = "USD"
-    salary_type: str = "unknown"          # "hourly" | "monthly" | "annual" | "unknown"
-    experience_min: float = 0.0           # years
+    salary_type: str = "unknown"
+    salary_usd_annual_min: int = 0
+    salary_usd_annual_max: int = 0
+    experience_min: float = 0.0
     experience_max: Optional[float] = None
-    degree_requirement: int = 0           # 0–5
+    degree_requirement: int = 0
     skills: list[dict] = field(default_factory=list)  # [{"name": str, "importance": int}]
 
 
@@ -63,6 +74,7 @@ def _safe_float(val, default: float = 0.0) -> float:
 def extract(raw_text: str) -> JDExtractResult:
     """Call LLM to extract structured fields from raw job description text."""
     from apps.llm.service import LLMService
+    from apps.jobs.services.salary_normalizer import normalize_salary_range
 
     system_prompt = _load_system_prompt()
 
@@ -92,6 +104,7 @@ def extract(raw_text: str) -> JDExtractResult:
 
     salary_min = _safe_int(data.get("salary_min"), 0)
     salary_max = _safe_int(data.get("salary_max"), 0)
+    salary_currency = str(data.get("salary_currency") or "USD").upper()
 
     salary_type = str(data.get("salary_type") or "").lower()
     if salary_type not in VALID_SALARY_TYPES:
@@ -101,25 +114,47 @@ def extract(raw_text: str) -> JDExtractResult:
     if job_type not in VALID_JOB_TYPES:
         job_type = "full-time"
 
+    role_category = str(data.get("role_category") or "other").lower()
+    if role_category not in VALID_ROLE_CATEGORIES:
+        role_category = "other"
+
+    is_remote = bool(data.get("is_remote", False))
+    # Also set is_remote if job_type is explicitly remote
+    if job_type == "remote":
+        is_remote = True
+
     experience_min = _safe_float(data.get("experience_min"), 0.0)
     exp_max_raw = data.get("experience_max")
     experience_max = _safe_float(exp_max_raw) if exp_max_raw is not None else None
 
-    skills = [
-        s for s in (data.get("skills") or [])
-        if isinstance(s, dict) and s.get("name")
-    ]
+    # Skills: LLM should already return canonical names; log anything unexpected
+    skills = []
+    for s in (data.get("skills") or []):
+        if isinstance(s, dict) and s.get("name"):
+            skills.append({
+                "name": str(s["name"]).strip().lower(),
+                "importance": max(1, min(5, _safe_int(s.get("importance"), 3))),
+            })
+
+    # Normalize salary to USD annual
+    usd_annual_min, usd_annual_max = normalize_salary_range(
+        salary_min, salary_max, salary_currency, salary_type
+    )
 
     return JDExtractResult(
         title=str(data.get("title") or "").strip(),
         company=str(data.get("company") or "").strip(),
         location=str(data.get("location") or "").strip(),
+        is_remote=is_remote,
         seniority=seniority,
+        role_category=role_category,
         job_type=job_type,
         salary_min=salary_min,
         salary_max=salary_max,
-        salary_currency=str(data.get("salary_currency") or "USD").upper(),
+        salary_currency=salary_currency,
         salary_type=salary_type,
+        salary_usd_annual_min=usd_annual_min,
+        salary_usd_annual_max=usd_annual_max,
         experience_min=experience_min,
         experience_max=experience_max,
         degree_requirement=degree_requirement,

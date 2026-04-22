@@ -178,6 +178,7 @@ class JDExtractionRecord(models.Model):
     index = models.IntegerField()
     raw_data = models.JSONField(default=dict)
     combined_text = models.TextField(blank=True, default="")
+    content_hash = models.CharField(max_length=32, db_index=True, blank=True, default="")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     result = models.JSONField(null=True, blank=True)
     error_msg = models.CharField(max_length=500, blank=True, default="")

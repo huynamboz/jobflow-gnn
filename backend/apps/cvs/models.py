@@ -36,6 +36,7 @@ class CV(models.Model):
     seniority = models.IntegerField(choices=Seniority.choices, default=Seniority.MID)
     experience_years = models.FloatField(default=0.0)
     education = models.IntegerField(choices=Education.choices, default=Education.BACHELOR)
+    role_category = models.CharField(max_length=20, blank=True, default="other")
     work_experience = models.JSONField(default=list, blank=True)
 
     # Skills (M2M through CVSkill)

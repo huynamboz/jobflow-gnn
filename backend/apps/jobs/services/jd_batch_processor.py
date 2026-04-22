@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import threading
 from dataclasses import asdict
@@ -34,9 +35,14 @@ def is_running(batch_id: int) -> bool:
         return batch_id in _cancel_events
 
 
+def content_hash(text: str) -> str:
+    """MD5 of combined_text — used to detect duplicate rows within a batch."""
+    return hashlib.md5(text.encode("utf-8", errors="replace")).hexdigest()
+
+
 def _run(batch_id: int, cancel_event: threading.Event) -> None:
     import django
-    django.setup()  # safe to call multiple times
+    django.setup()
 
     from django.db.models import F
     from apps.jobs.models import JDExtractionBatch, JDExtractionRecord
@@ -49,9 +55,31 @@ def _run(batch_id: int, cancel_event: threading.Event) -> None:
             batch_id=batch_id, status=JDExtractionRecord.STATUS_PENDING
         ).order_by("index")
 
+        # Cache of hash → result for already-processed records in this batch
+        seen_hashes: dict[str, dict] = {}
+
         for record in records_qs.iterator(chunk_size=50):
             if cancel_event.is_set():
                 break
+
+            h = content_hash(record.combined_text)
+
+            # Stamp the hash so we can query duplicates later
+            if not record.content_hash:
+                JDExtractionRecord.objects.filter(id=record.id).update(content_hash=h)
+
+            # Dedup: if this content was already extracted in this batch, reuse the result
+            if h in seen_hashes:
+                logger.info(
+                    "Record %d (batch %d): duplicate content — reusing result from earlier record",
+                    record.id, batch_id,
+                )
+                JDExtractionRecord.objects.filter(id=record.id).update(
+                    status=JDExtractionRecord.STATUS_DONE,
+                    result=seen_hashes[h],
+                )
+                JDExtractionBatch.objects.filter(id=batch_id).update(done_count=F("done_count") + 1)
+                continue
 
             JDExtractionRecord.objects.filter(id=record.id).update(
                 status=JDExtractionRecord.STATUS_PROCESSING
@@ -59,11 +87,13 @@ def _run(batch_id: int, cancel_event: threading.Event) -> None:
 
             try:
                 result = extract(record.combined_text)
+                result_dict = asdict(result)
                 JDExtractionRecord.objects.filter(id=record.id).update(
                     status=JDExtractionRecord.STATUS_DONE,
-                    result=asdict(result),
+                    result=result_dict,
                 )
                 JDExtractionBatch.objects.filter(id=batch_id).update(done_count=F("done_count") + 1)
+                seen_hashes[h] = result_dict
             except Exception as exc:
                 JDExtractionRecord.objects.filter(id=record.id).update(
                     status=JDExtractionRecord.STATUS_ERROR,

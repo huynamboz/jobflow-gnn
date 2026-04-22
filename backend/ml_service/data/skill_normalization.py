@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 from ml_service.config import get_settings
 from ml_service.graph.schema import SkillCategory
+
+logger = logging.getLogger(__name__)
 
 
 class SkillNormalizer:
@@ -31,7 +34,10 @@ class SkillNormalizer:
 
     def normalize(self, raw_skill: str) -> str | None:
         """Return canonical skill name, or None if unknown."""
-        return self._alias_map.get(raw_skill.lower())
+        result = self._alias_map.get(raw_skill.strip().lower())
+        if result is None:
+            logger.debug("Skill dropped (not in taxonomy): %r", raw_skill)
+        return result
 
     @property
     def canonical_skills(self) -> list[str]:

@@ -12,6 +12,15 @@ from apps.skills.services import SkillService
 
 logger = logging.getLogger(__name__)
 
+# When LLM cannot determine experience_years (returns 0) but seniority is known,
+# use these mid-point defaults to avoid a misleading 0 in training data.
+_SENIORITY_DEFAULT_YEARS: dict[int, float] = {
+    2: 3.5,   # Mid
+    3: 6.5,   # Senior
+    4: 10.0,  # Lead
+    5: 14.0,  # Manager
+}
+
 
 class CVService:
     """Parse CV files and save structured data to DB."""
@@ -31,15 +40,25 @@ class CVService:
         from apps.cvs.services.llm_cv_extractor import extract as llm_extract
         result = llm_extract(raw_text)
 
-        # If LLM returned nothing useful, fall back to rule-based parser
         if not result.skills and not result.work_experience:
             logger.info("LLM extraction empty, falling back to rule-based parser")
             return self.save_from_file(file_path, user=user, source="upload")
 
-        # Infer seniority from experience_years
-        seniority = self._years_to_seniority(result.experience_years)
+        # Resolve seniority: prefer LLM-inferred value, fall back to years-based rule
+        if result.seniority >= 0:
+            seniority = result.seniority
+        else:
+            seniority = self._years_to_seniority(result.experience_years)
 
-        # Normalize skills via SkillNormalizer then resolve to DB records
+        # Fix: when experience_years=0 and seniority implies real experience, use default
+        experience_years = result.experience_years
+        if experience_years == 0 and seniority >= 2:
+            experience_years = _SENIORITY_DEFAULT_YEARS.get(seniority, 0.0)
+            logger.info(
+                "Corrected experience_years 0 → %.1f based on seniority=%d",
+                experience_years, seniority,
+            )
+
         normalized_skills: list[tuple[str, int]] = []
         for s in result.skills:
             canonical = self._normalizer.normalize(s["name"])
@@ -55,8 +74,9 @@ class CVService:
                 parsed_text=raw_text,
                 candidate_name=result.name,
                 seniority=seniority,
-                experience_years=result.experience_years,
+                experience_years=experience_years,
                 education=result.education,
+                role_category=result.role_category,
                 work_experience=result.work_experience,
                 source="upload",
             )
@@ -69,14 +89,14 @@ class CVService:
                     )
 
         logger.info(
-            "LLM CV #%d: name=%r exp=%.1f edu=%d skills=%d",
-            cv.id, result.name, result.experience_years, result.education, len(normalized_skills),
+            "LLM CV #%d: name=%r exp=%.1f seniority=%d role=%s edu=%d skills=%d",
+            cv.id, result.name, experience_years, seniority,
+            result.role_category, result.education, len(normalized_skills),
         )
         return cv
 
     @staticmethod
     def _extract_raw_text(file_path: str) -> str:
-        """Extract raw text from PDF/DOCX/TXT."""
         suffix = Path(file_path).suffix.lower()
         if suffix == ".pdf":
             import pdfplumber
@@ -91,24 +111,32 @@ class CVService:
             import docx
             doc = docx.Document(file_path)
             return "\n".join(p.text for p in doc.paragraphs)
-        # .txt fallback
         return Path(file_path).read_text(encoding="utf-8", errors="ignore")
 
     @staticmethod
     def _years_to_seniority(years: float) -> int:
-        if years < 1:
-            return 0   # INTERN
-        if years < 3:
-            return 1   # JUNIOR
-        if years < 6:
-            return 2   # MID
-        if years < 9:
-            return 3   # SENIOR
-        return 4       # LEAD
+        """Canonical seniority mapping — mirrors the rule table in cv_extraction.md."""
+        if years < 0.5:
+            return 0   # Intern
+        if years < 2:
+            return 1   # Junior
+        if years < 5:
+            return 2   # Mid
+        if years < 8:
+            return 3   # Senior
+        if years < 12:
+            return 4   # Lead
+        return 5       # Manager
 
     def save_from_extracted(self, data: dict, user=None) -> CV:
         """Save CV from pre-extracted (and user-edited) JSON data."""
         skills_data = data.get("skills") or []
+
+        seniority = int(data.get("seniority", 2))
+        experience_years = float(data.get("experience_years", 0))
+        if experience_years == 0 and seniority >= 2:
+            experience_years = _SENIORITY_DEFAULT_YEARS.get(seniority, 0.0)
+
         with transaction.atomic():
             cv = CV.objects.create(
                 user=user,
@@ -116,9 +144,10 @@ class CVService:
                 raw_text=data.get("raw_text", ""),
                 parsed_text=data.get("raw_text", ""),
                 candidate_name=data.get("candidate_name", ""),
-                seniority=int(data.get("seniority", 2)),
-                experience_years=float(data.get("experience_years", 0)),
+                seniority=seniority,
+                experience_years=experience_years,
                 education=int(data.get("education", 2)),
+                role_category=data.get("role_category", "other"),
                 work_experience=data.get("work_experience") or [],
                 source="upload",
             )
@@ -135,17 +164,14 @@ class CVService:
         return cv
 
     def save_from_file(self, file_path: str, user=None, source: str = "upload") -> CV:
-        """Parse CV file and save to DB."""
         cv_data = self._parser.parse_file(file_path)
         return self._save_cv(cv_data, file_path=file_path, user=user, source=source)
 
     def save_from_text(self, text: str, user=None, source: str = "upload") -> CV:
-        """Parse CV text and save to DB."""
         cv_data = self._parser.parse_text(text)
         return self._save_cv(cv_data, raw_text=text, user=user, source=source)
 
     def _save_cv(self, cv_data, file_path=None, raw_text=None, user=None, source="upload", source_category="") -> CV:
-        """Save parsed CV data to DB."""
         with transaction.atomic():
             cv = CV.objects.create(
                 user=user,
@@ -158,7 +184,6 @@ class CVService:
                 source=source,
                 source_category=source_category,
             )
-
             for skill_name, proficiency in zip(cv_data.skills, cv_data.skill_proficiencies):
                 skill = self._skill_service.get_or_create(skill_name)
                 if skill:
@@ -166,18 +191,14 @@ class CVService:
                         cv=cv, skill=skill,
                         defaults={"proficiency": proficiency},
                     )
-
         logger.info("Saved CV #%d: %d skills, seniority=%s", cv.id, len(cv_data.skills), cv_data.seniority.name)
         return cv
 
     @staticmethod
     def to_cv_data(cv: CV):
-        """Convert Django CV model → ml_service CVData."""
         from ml_service.graph.schema import CVData, EducationLevel, SeniorityLevel
-
         skills = tuple(cv.cv_skills.values_list("skill__canonical_name", flat=True))
         proficiencies = tuple(cv.cv_skills.values_list("proficiency", flat=True))
-
         return CVData(
             cv_id=cv.id,
             seniority=SeniorityLevel(cv.seniority),
@@ -190,9 +211,7 @@ class CVService:
 
     @staticmethod
     def get_all_cv_data() -> list:
-        """Query all active CVs and convert to CVData list."""
         from ml_service.graph.schema import CVData, EducationLevel, SeniorityLevel
-
         cvs = CV.objects.filter(is_active=True).prefetch_related("cv_skills__skill")
         result = []
         for cv in cvs:

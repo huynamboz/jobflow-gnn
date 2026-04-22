@@ -25,12 +25,19 @@ _EDUCATION_MAP = {
     "doctorate": 4,
 }
 
+VALID_ROLE_CATEGORIES = {
+    "backend", "frontend", "fullstack", "mobile", "devops",
+    "data_ml", "data_eng", "qa", "design", "ba", "other",
+}
+
 
 @dataclass
 class CVExtractResult:
     name: str = ""
     experience_years: float = 0.0
-    education: int = 2          # default BACHELOR
+    seniority: int = -1           # -1 = not returned by LLM; cv_service falls back to years-based rule
+    role_category: str = "other"
+    education: int = 2            # default BACHELOR
     skills: list[dict] = field(default_factory=list)   # [{"name": str, "proficiency": int}]
     work_experience: list[dict] = field(default_factory=list)
 
@@ -40,7 +47,6 @@ def _load_system_prompt() -> str:
 
 
 def _strip_code_fence(text: str) -> str:
-    """Remove markdown code blocks if the LLM wraps JSON in them."""
     text = text.strip()
     match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", text)
     if match:
@@ -83,10 +89,29 @@ def extract(raw_text: str) -> CVExtractResult:
     except (TypeError, ValueError):
         experience_years = 0.0
 
-    skills = [
-        s for s in data.get("skills") or []
-        if isinstance(s, dict) and s.get("name")
-    ]
+    # Seniority: use LLM value if present and valid; -1 signals fallback to years-based rule
+    seniority_raw = data.get("seniority")
+    if seniority_raw is not None:
+        try:
+            seniority = max(0, min(5, int(seniority_raw)))
+        except (TypeError, ValueError):
+            seniority = -1
+    else:
+        seniority = -1
+
+    role_category = str(data.get("role_category") or "other").lower()
+    if role_category not in VALID_ROLE_CATEGORIES:
+        role_category = "other"
+
+    # Skills: LLM should return canonical names; lowercase for safety
+    skills = []
+    for s in data.get("skills") or []:
+        if isinstance(s, dict) and s.get("name"):
+            skills.append({
+                "name": str(s["name"]).strip().lower(),
+                "proficiency": max(1, min(5, int(s.get("proficiency") or 3))),
+            })
+
     work_experience = [
         w for w in data.get("work_experience") or []
         if isinstance(w, dict) and w.get("title")
@@ -95,6 +120,8 @@ def extract(raw_text: str) -> CVExtractResult:
     return CVExtractResult(
         name=str(data.get("name") or "").strip(),
         experience_years=experience_years,
+        seniority=seniority,
+        role_category=role_category,
         education=education_int,
         skills=skills,
         work_experience=work_experience,

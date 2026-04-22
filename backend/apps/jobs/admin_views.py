@@ -196,7 +196,7 @@ class JDBatchListView(APIView):
         import json as _json
         from rest_framework.parsers import MultiPartParser, JSONParser
         from apps.jobs.models import JDExtractionBatch, JDExtractionRecord
-        from apps.jobs.services.jd_batch_processor import start_batch
+        from apps.jobs.services.jd_batch_processor import start_batch, content_hash
 
         upload = request.FILES.get("file")
         # fields_config comes as JSON string in multipart or list in JSON body
@@ -227,11 +227,13 @@ class JDBatchListView(APIView):
             all_records, _, _ = _parse_jsonl(upload, limit=limit)
             for idx, obj in all_records:
                 parts = [f"{f}: {obj[f]}" for f in fields_config if obj.get(f)]
+                combined = "\n".join(parts)
                 records_to_create.append(JDExtractionRecord(
                     batch=batch,
                     index=idx,
                     raw_data=obj,
-                    combined_text="\n".join(parts),
+                    combined_text=combined,
+                    content_hash=content_hash(combined),
                 ))
         except Exception as exc:
             batch.delete()
