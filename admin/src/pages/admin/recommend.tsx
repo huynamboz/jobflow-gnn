@@ -197,7 +197,7 @@ export default function RecommendPage() {
             className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
             {loading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
-            {loading ? "Matching…" : "Find Jobs"}
+            {loading ? "Matching… (may take ~30s on first run)" : "Find Jobs"}
           </button>
         </div>
       </form>
