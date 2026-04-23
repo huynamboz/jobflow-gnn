@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardBody } from "@heroui/card";
-import { ChevronLeft, ChevronRight, FileText, Upload, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, FileText, Upload, X } from "lucide-react";
 
 import { cvAdminService } from "@/services/cv-admin.service";
 import type { AdminCVDetail, AdminCVItem, WorkExperienceItem } from "@/types/cv-admin.types";
@@ -24,6 +24,20 @@ const SOURCE_LABEL: Record<string, string> = {
   upload: "Upload",
   linkedin_dataset: "LinkedIn",
   kaggle: "Kaggle",
+};
+
+const ROLE_COLOR: Record<string, string> = {
+  backend:   "oklch(0.93 0.05 240)",
+  frontend:  "oklch(0.93 0.06 180)",
+  fullstack: "oklch(0.93 0.06 210)",
+  mobile:    "oklch(0.93 0.05 270)",
+  devops:    "oklch(0.93 0.05 60)",
+  data_ml:   "oklch(0.93 0.06 300)",
+  data_eng:  "oklch(0.92 0.05 320)",
+  qa:        "oklch(0.93 0.04 140)",
+  design:    "oklch(0.93 0.06 20)",
+  ba:        "oklch(0.93 0.04 80)",
+  other:     "oklch(0.94 0.005 265)",
 };
 
 function WorkExperienceSection({ items }: { items: WorkExperienceItem[] }) {
@@ -86,11 +100,18 @@ function DetailDrawer({ cvId, onClose }: { cvId: number; onClose: () => void }) 
             {cv.candidate_name && (
               <p className="text-lg font-semibold text-default-900">{cv.candidate_name}</p>
             )}
+            <p className="truncate text-xs text-default-400" title={cv.file_name}>{cv.file_name}</p>
 
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${SENIORITY_COLOR[cv.seniority] ?? "bg-gray-100"}`}>
                 {SENIORITY_LABEL[cv.seniority] ?? cv.seniority}
               </span>
+              {cv.role_category && (
+                <span style={{ background: ROLE_COLOR[cv.role_category] ?? ROLE_COLOR.other }}
+                  className="rounded-lg px-2.5 py-1 text-xs font-medium text-default-700">
+                  {cv.role_category}
+                </span>
+              )}
               <span className="rounded-lg border border-default-200 bg-default-50 px-2.5 py-1 text-xs text-default-600">
                 {SOURCE_LABEL[cv.source] ?? cv.source}
               </span>
@@ -103,6 +124,7 @@ function DetailDrawer({ cvId, onClose }: { cvId: number; onClose: () => void }) 
 
             <div className="space-y-1.5 rounded-xl border border-default-100 bg-default-50 px-4 py-3 text-sm">
               {[
+                ["Role", cv.role_category || "—"],
                 ["Experience", `${cv.experience_years}y`],
                 ["Education", EDUCATION_LABEL[cv.education] ?? cv.education],
                 ["Skills", cv.skills?.length ?? 0],
@@ -160,21 +182,23 @@ export default function CVsPage() {
   const [loading, setLoading] = useState(true);
   const [seniority, setSeniority] = useState("");
   const [source, setSource] = useState("");
+  const [roleCategory, setRoleCategory] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
 
-  const load = useCallback((p: number, sen: string, src: string) => {
+  const load = useCallback((p: number, sen: string, src: string, role: string) => {
     setLoading(true);
-    cvAdminService.listCVs({ seniority: sen, source: src, page: p, page_size: PAGE_SIZE })
+    cvAdminService.listCVs({ seniority: sen, source: src, role_category: role, page: p, page_size: PAGE_SIZE })
       .then((res) => { setItems(res.data ?? []); setTotal(res.total ?? 0); })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { load(page, seniority, source); }, [page, load]);
+  useEffect(() => { load(page, seniority, source, roleCategory); }, [page, load]);
 
-  const handleFilter = (sen: string, src: string) => {
-    setSeniority(sen); setSource(src); setPage(1);
-    load(1, sen, src);
+  const handleFilter = (sen: string, src: string, role: string) => {
+    setSeniority(sen); setSource(src); setRoleCategory(role); setPage(1);
+    load(1, sen, src, role);
   };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
@@ -186,21 +210,40 @@ export default function CVsPage() {
           <h1 className="text-2xl font-bold text-default-900">CVs</h1>
           <p className="text-default-500">{total.toLocaleString()} CVs in system</p>
         </div>
-        <button
-          onClick={() => navigate("/admin/cvs/upload")}
-          className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          <Upload className="size-4" /> Upload CV
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              setExporting(true);
+              try { await cvAdminService.exportCVs({ role_category: roleCategory, source }); }
+              finally { setExporting(false); }
+            }}
+            disabled={exporting}
+            className="flex items-center gap-2 rounded-xl border border-default-200 bg-white px-4 py-2 text-sm font-medium text-default-700 hover:bg-default-50 disabled:opacity-50"
+          >
+            <Download className="size-4" />
+            {exporting ? "Exporting…" : "Export JSON"}
+          </button>
+          <button
+            onClick={() => navigate("/admin/cvs/upload")}
+            className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            <Upload className="size-4" /> Upload CV
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <select value={seniority} onChange={(e) => handleFilter(e.target.value, source)}
+        <select value={roleCategory} onChange={(e) => handleFilter(seniority, source, e.target.value)}
+          className="h-9 rounded-lg border border-default-200 bg-white px-3 text-sm text-default-700 outline-none focus:border-blue-400">
+          <option value="">All Roles</option>
+          {Object.keys(ROLE_COLOR).map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <select value={seniority} onChange={(e) => handleFilter(e.target.value, source, roleCategory)}
           className="h-9 rounded-lg border border-default-200 bg-white px-3 text-sm text-default-700 outline-none focus:border-blue-400">
           <option value="">All Seniority</option>
           {Object.entries(SENIORITY_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
-        <select value={source} onChange={(e) => handleFilter(seniority, e.target.value)}
+        <select value={source} onChange={(e) => handleFilter(seniority, e.target.value, roleCategory)}
           className="h-9 rounded-lg border border-default-200 bg-white px-3 text-sm text-default-700 outline-none focus:border-blue-400">
           <option value="">All Sources</option>
           {Object.entries(SOURCE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -222,34 +265,45 @@ export default function CVsPage() {
                   <thead className="border-b border-default-100 bg-default-50 text-xs font-semibold uppercase tracking-wide text-default-500">
                     <tr>
                       <th className="px-4 py-3 text-left">ID</th>
+                      <th className="px-4 py-3 text-left">File</th>
+                      <th className="px-4 py-3 text-left">Role</th>
                       <th className="px-4 py-3 text-left">Seniority</th>
-                      <th className="px-4 py-3 text-right">Experience</th>
+                      <th className="px-4 py-3 text-right">Exp</th>
                       <th className="px-4 py-3 text-left">Education</th>
-                      <th className="px-4 py-3 text-left">Source</th>
                       <th className="px-4 py-3 text-right">Skills</th>
-                      <th className="px-4 py-3 text-left">Created</th>
+                      <th className="px-4 py-3 text-left">Source</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-default-100">
                     {items.map((cv) => (
                       <tr key={cv.id} onClick={() => setSelectedId(cv.id)}
                         className="cursor-pointer transition-colors hover:bg-default-50">
-                        <td className="px-4 py-3 font-mono text-xs text-default-500">#{cv.id}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-default-400">#{cv.id}</td>
+                        <td className="max-w-[180px] truncate px-4 py-3 text-xs font-medium text-default-700" title={cv.file_name}>
+                          {cv.file_name || <span className="italic text-default-400">—</span>}
+                        </td>
+                        <td className="px-4 py-3">
+                          {cv.role_category && cv.role_category !== "other" ? (
+                            <span style={{ background: ROLE_COLOR[cv.role_category] ?? ROLE_COLOR.other }}
+                              className="rounded-md px-2 py-0.5 text-xs font-medium text-default-700">
+                              {cv.role_category}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-default-400">—</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3">
                           <span className={`rounded-lg px-2 py-0.5 text-xs font-medium ${SENIORITY_COLOR[cv.seniority] ?? "bg-gray-100"}`}>
                             {SENIORITY_LABEL[cv.seniority] ?? cv.seniority}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right text-default-600">{cv.experience_years}y</td>
-                        <td className="px-4 py-3 text-default-500">{EDUCATION_LABEL[cv.education] ?? cv.education}</td>
+                        <td className="px-4 py-3 text-right text-xs text-default-600">{cv.experience_years}y</td>
+                        <td className="px-4 py-3 text-xs text-default-500">{EDUCATION_LABEL[cv.education] ?? cv.education}</td>
+                        <td className="px-4 py-3 text-right font-medium text-default-700">{cv.skill_count}</td>
                         <td className="px-4 py-3">
-                          <span className="rounded-md border border-default-200 bg-default-50 px-2 py-0.5 text-xs text-default-600">
+                          <span className="rounded-md border border-default-200 bg-default-50 px-2 py-0.5 text-xs text-default-500">
                             {SOURCE_LABEL[cv.source] ?? cv.source}
                           </span>
-                        </td>
-                        <td className="px-4 py-3 text-right font-medium text-default-700">{cv.skill_count}</td>
-                        <td className="px-4 py-3 text-xs text-default-400">
-                          {new Date(cv.created_at).toLocaleDateString("vi-VN")}
                         </td>
                       </tr>
                     ))}

@@ -2,9 +2,10 @@ from django.db import models
 
 
 class LabelingCV(models.Model):
-    cv_id            = models.IntegerField(unique=True)
+    cv_id            = models.IntegerField(unique=True)   # = CV.id
     source           = models.CharField(max_length=50, default="linkedin")
-    skills           = models.JSONField(default=list)
+    role_category    = models.CharField(max_length=20, blank=True, default="other")
+    skills           = models.JSONField(default=list)     # [{"name": str, "proficiency": int}]
     seniority        = models.CharField(max_length=20, default="MID")
     experience_years = models.FloatField(default=0.0)
     education        = models.CharField(max_length=20, default="BACHELOR")
@@ -20,20 +21,51 @@ class LabelingCV(models.Model):
 
 
 class LabelingJob(models.Model):
-    job_id       = models.IntegerField(unique=True)
-    title        = models.CharField(max_length=200, default="")
-    skills       = models.JSONField(default=list)
-    seniority    = models.CharField(max_length=20, default="MID")
-    salary_min   = models.IntegerField(null=True, blank=True)
-    salary_max   = models.IntegerField(null=True, blank=True)
-    text_summary = models.TextField(default="")
-    created_at   = models.DateTimeField(auto_now_add=True)
+    job_id         = models.IntegerField(unique=True)   # = Job.id
+    title          = models.CharField(max_length=200, default="")
+    role_category  = models.CharField(max_length=20, blank=True, default="other")
+    skills         = models.JSONField(default=list)     # [{"name": str, "importance": int}]
+    seniority      = models.CharField(max_length=20, default="MID")
+    experience_min = models.FloatField(default=0.0)
+    experience_max = models.FloatField(null=True, blank=True)
+    salary_min     = models.IntegerField(null=True, blank=True)
+    salary_max     = models.IntegerField(null=True, blank=True)
+    text_summary   = models.TextField(default="")
+    created_at     = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "labeling_job"
 
     def __str__(self):
         return f"Job#{self.job_id}: {self.title}"
+
+
+class LabelingBatch(models.Model):
+    STATUS_RUNNING   = "running"
+    STATUS_DONE      = "done"
+    STATUS_ERROR     = "error"
+    STATUS_CANCELLED = "cancelled"
+
+    STATUS_CHOICES = [
+        (STATUS_RUNNING,   "Running"),
+        (STATUS_DONE,      "Done"),
+        (STATUS_ERROR,     "Error"),
+        (STATUS_CANCELLED, "Cancelled"),
+    ]
+
+    status     = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_RUNNING)
+    total      = models.IntegerField(default=0)
+    done_count = models.IntegerField(default=0)
+    error_count = models.IntegerField(default=0)
+    workers    = models.PositiveSmallIntegerField(default=3)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "labeling_batches"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"LabelBatch #{self.id} ({self.status})"
 
 
 class SelectionReason(models.TextChoices):
@@ -91,6 +123,7 @@ class DimScore(models.IntegerChoices):
 
 class HumanLabel(models.Model):
     pair           = models.ForeignKey(PairQueue, on_delete=models.CASCADE, related_name="labels")
+    batch          = models.ForeignKey(LabelingBatch, on_delete=models.SET_NULL, null=True, blank=True, related_name="labels")
     skill_fit      = models.IntegerField(choices=DimScore.choices)
     seniority_fit  = models.IntegerField(choices=DimScore.choices)
     experience_fit = models.IntegerField(choices=DimScore.choices)

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
+import { Modal, ModalContent, ModalHeader, ModalBody } from "@heroui/modal";
 import {
+  IconAlertCircle,
   IconClock,
   IconCopy,
   IconFileText,
   IconLoader2,
   IconSparkles,
-  IconX,
-  IconAlertCircle,
 } from "@tabler/icons-react";
 
 import { jobService } from "@/services/job.service";
@@ -16,146 +16,144 @@ import { Badge, type BadgeStatus } from "./_primitives";
 
 export function RecordDrawer({ batchId, record, fieldsConfig, onClose }: {
   batchId: number;
-  record: JDBatchRecord;
+  record: JDBatchRecord | null;
   fieldsConfig: string[];
   onClose: () => void;
 }) {
   const [detail, setDetail] = useState<JDBatchRecord | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (!record) return;
+    setDetail(null);
+    setLoading(true);
     jobService.getBatchRecord(batchId, record.id)
       .then(setDetail).catch(() => setDetail(record)).finally(() => setLoading(false));
   }, [batchId, record]);
 
   const r = detail ?? record;
-  const res = r.result;
+  const res = r?.result;
 
   return (
-    <>
-      <div onClick={onClose} style={{
-        position: "fixed", inset: 0, zIndex: 40,
-        background: "rgba(20,18,30,0.25)", backdropFilter: "blur(4px)",
-        animation: "jb-fade 0.18s ease",
-      }} />
-      <div style={{
-        position: "fixed", top: 16, right: 16, bottom: 16,
-        width: "min(960px, calc(100% - 32px))",
-        background: T.surface, borderRadius: 24,
-        boxShadow: "0 20px 60px -20px rgba(50,30,90,0.22),0 6px 18px rgba(20,18,30,0.08)",
-        zIndex: 50, display: "flex", flexDirection: "column", overflow: "hidden",
-        animation: "jb-slide 0.24s cubic-bezier(0.2,0.8,0.2,1)",
-      }}>
-        {/* Header */}
-        <div style={{ padding: "16px 24px", borderBottom: `1px solid ${T.line}`, display: "flex", alignItems: "center", gap: 14 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontFamily: "monospace", fontSize: 12, color: T.ink3 }}>#{String(r.index + 1).padStart(2, "0")}</span>
-              <span style={{ fontWeight: 700, fontSize: 17, letterSpacing: "-0.015em" }}>{r.title || "Record"}</span>
-              <Badge status={r.status as BadgeStatus} />
+    <Modal
+      isOpen={!!record}
+      onClose={onClose}
+      size="5xl"
+      scrollBehavior="inside"
+    >
+      <ModalContent>
+        <ModalHeader style={{ borderBottom: `1px solid ${T.line}`, padding: "16px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {r && <span style={{ fontFamily: "monospace", fontSize: 12, color: T.ink3 }}>#{String(r.index + 1).padStart(2, "0")}</span>}
+                <span style={{ fontWeight: 700, fontSize: 17, letterSpacing: "-0.015em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {r?.title || "Record"}
+                </span>
+                {r && <Badge status={r.status as BadgeStatus} />}
+              </div>
+              {r?.company && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>{r.company}</div>}
             </div>
-            {r.company && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>{r.company}</div>}
-          </div>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
             {res && (
-              <button type="button" title="Copy extracted JSON"
+              <button
+                type="button"
+                title="Copy extracted JSON"
                 onClick={() => navigator.clipboard?.writeText(JSON.stringify(res, null, 2))}
-                style={{ width: 34, height: 34, borderRadius: 12, background: T.surface2, border: "none", display: "grid", placeItems: "center", cursor: "pointer", color: T.ink2 }}>
+                style={{ width: 34, height: 34, borderRadius: 12, background: T.surface2, border: "none", display: "grid", placeItems: "center", cursor: "pointer", color: T.ink2, flexShrink: 0 }}
+              >
                 <IconCopy size={15} />
               </button>
             )}
-            <button type="button" onClick={onClose}
-              style={{ width: 34, height: 34, borderRadius: 12, background: T.surface2, border: "none", display: "grid", placeItems: "center", cursor: "pointer", color: T.ink2 }}>
-              <IconX size={16} />
-            </button>
           </div>
-        </div>
+        </ModalHeader>
 
-        {loading ? (
-          <div style={{ flex: 1, display: "grid", placeItems: "center", color: T.ink3 }}>
-            <IconLoader2 size={20} style={{ animation: "jb-spin 0.7s linear infinite" }} />
-          </div>
-        ) : (
-          <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", overflow: "hidden" }}>
-            {/* Left — raw input */}
-            <div style={{ overflow: "auto", padding: "20px 24px" }}>
-              <PaneLabel icon={<IconFileText size={12} />} right={`${fieldsConfig.length} fields in prompt`}>
-                Raw input
-              </PaneLabel>
-              {r.combined_text ? (
-                <pre style={{
-                  background: T.surface2, border: `1px solid ${T.line}`, borderRadius: 12,
-                  padding: "12px 14px", fontFamily: "'JetBrains Mono',ui-monospace,monospace",
-                  fontSize: 12, color: T.ink, whiteSpace: "pre-wrap", wordBreak: "break-word",
-                  lineHeight: 1.6, margin: 0,
-                }}>
-                  {r.combined_text}
-                </pre>
-              ) : (
-                <div style={{ color: T.ink4, fontSize: 13, padding: "24px 0" }}>No combined text stored.</div>
-              )}
+        <ModalBody style={{ padding: 0 }}>
+          {loading ? (
+            <div style={{ display: "grid", placeItems: "center", height: 300, color: T.ink3 }}>
+              <IconLoader2 size={20} style={{ animation: "jb-spin 0.7s linear infinite" }} />
             </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", minHeight: 400 }}>
+              {/* Left — raw input */}
+              <div style={{ overflow: "auto", padding: "20px 24px", borderRight: `1px solid ${T.line}` }}>
+                <PaneLabel icon={<IconFileText size={12} />} right={`${fieldsConfig.length} fields in prompt`}>
+                  Raw input
+                </PaneLabel>
+                {r?.combined_text ? (
+                  <pre style={{
+                    background: T.surface2, border: `1px solid ${T.line}`, borderRadius: 12,
+                    padding: "12px 14px", fontFamily: "'JetBrains Mono',ui-monospace,monospace",
+                    fontSize: 12, color: T.ink, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                    lineHeight: 1.6, margin: 0,
+                  }}>
+                    {r.combined_text}
+                  </pre>
+                ) : (
+                  <div style={{ color: T.ink4, fontSize: 13, padding: "24px 0" }}>No combined text stored.</div>
+                )}
+              </div>
 
-            {/* Right — extracted */}
-            <div style={{ overflow: "auto", padding: "20px 24px", borderLeft: `1px solid ${T.line}`, background: `color-mix(in oklch,${T.surface2} 70%,white)` }}>
-              <PaneLabel icon={<IconSparkles size={12} />}>Extracted by LLM</PaneLabel>
+              {/* Right — extracted */}
+              <div style={{ overflow: "auto", padding: "20px 24px", background: `color-mix(in oklch,${T.surface2} 70%,white)` }}>
+                <PaneLabel icon={<IconSparkles size={12} />}>Extracted by LLM</PaneLabel>
 
-              {r.status === "error" && r.error_msg && (
-                <div style={{ padding: 16, borderRadius: 12, background: T.danger50, border: `1px solid color-mix(in oklch,${T.danger} 20%,transparent)`, marginBottom: 14 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: T.danger, fontWeight: 700, fontSize: 13 }}>
-                    <IconAlertCircle size={14} /> Extraction failed
+                {r?.status === "error" && r.error_msg && (
+                  <div style={{ padding: 16, borderRadius: 12, background: T.danger50, border: `1px solid color-mix(in oklch,${T.danger} 20%,transparent)`, marginBottom: 14 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, color: T.danger, fontWeight: 700, fontSize: 13 }}>
+                      <IconAlertCircle size={14} /> Extraction failed
+                    </div>
+                    <div style={{ marginTop: 6, fontSize: 12.5, color: T.ink2 }}>{r.error_msg}</div>
                   </div>
-                  <div style={{ marginTop: 6, fontSize: 12.5, color: T.ink2 }}>{r.error_msg}</div>
-                </div>
-              )}
+                )}
 
-              {r.status === "pending" && (
-                <div style={{ padding: "32px 0", textAlign: "center", color: T.ink3 }}>
-                  <IconClock size={24} style={{ display: "block", margin: "0 auto 12px" }} />
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>Queued</div>
-                  <div style={{ fontSize: 12, marginTop: 4 }}>Waiting for a worker…</div>
-                </div>
-              )}
+                {r?.status === "pending" && (
+                  <div style={{ padding: "32px 0", textAlign: "center", color: T.ink3 }}>
+                    <IconClock size={24} style={{ display: "block", margin: "0 auto 12px" }} />
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>Queued</div>
+                    <div style={{ fontSize: 12, marginTop: 4 }}>Waiting for a worker…</div>
+                  </div>
+                )}
 
-              {r.status === "processing" && (
-                <div style={{ padding: "32px 0", textAlign: "center", color: T.accent }}>
-                  <IconLoader2 size={22} style={{ display: "block", margin: "0 auto 12px", animation: "jb-spin 0.7s linear infinite" }} />
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>Extracting…</div>
-                </div>
-              )}
+                {r?.status === "processing" && (
+                  <div style={{ padding: "32px 0", textAlign: "center", color: T.accent }}>
+                    <IconLoader2 size={22} style={{ display: "block", margin: "0 auto 12px", animation: "jb-spin 0.7s linear infinite" }} />
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>Extracting…</div>
+                  </div>
+                )}
 
-              {res && (
-                <div>
-                  {Object.entries(res).map(([k, v]) => {
-                    const isArray = Array.isArray(v);
-                    const isNull = v === null;
-                    return (
-                      <div key={k} style={{ display: "grid", gridTemplateColumns: "130px 1fr", gap: 10, padding: "8px 0", borderBottom: `1px dashed ${T.line}`, fontSize: 13 }}>
-                        <div style={{ color: T.accent, fontWeight: 500, fontSize: 12 }}>{k}</div>
-                        <div style={{ color: isNull ? T.ink4 : T.ink, wordBreak: "break-word", fontStyle: isNull ? "italic" : undefined }}>
-                          {isNull ? "—" : isArray ? (
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                              {(v as unknown[]).length === 0
-                                ? <span style={{ color: T.ink4 }}>—</span>
-                                : (v as { name: string }[]).map((x, i) => (
-                                  <span key={i} style={{ padding: "2px 8px", borderRadius: 999, background: T.surface2, fontSize: 11.5 }}>
-                                    {typeof x === "object" ? x.name ?? JSON.stringify(x) : String(x)}
-                                  </span>
-                                ))
-                              }
-                            </div>
-                          ) : String(v)}
+                {res && (
+                  <div>
+                    {Object.entries(res).map(([k, v]) => {
+                      const isArray = Array.isArray(v);
+                      const isNull = v === null;
+                      return (
+                        <div key={k} style={{ display: "grid", gridTemplateColumns: "130px 1fr", gap: 10, padding: "8px 0", borderBottom: `1px dashed ${T.line}`, fontSize: 13 }}>
+                          <div style={{ color: T.accent, fontWeight: 500, fontSize: 12 }}>{k}</div>
+                          <div style={{ color: isNull ? T.ink4 : T.ink, wordBreak: "break-word", fontStyle: isNull ? "italic" : undefined }}>
+                            {isNull ? "—" : isArray ? (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                {(v as unknown[]).length === 0
+                                  ? <span style={{ color: T.ink4 }}>—</span>
+                                  : (v as { name: string }[]).map((x, i) => (
+                                    <span key={i} style={{ padding: "2px 8px", borderRadius: 999, background: T.surface2, fontSize: 11.5 }}>
+                                      {typeof x === "object" ? x.name ?? JSON.stringify(x) : String(x)}
+                                    </span>
+                                  ))
+                                }
+                              </div>
+                            ) : String(v)}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
-    </>
+          )}
+        </ModalBody>
+      </ModalContent>
+    </Modal>
   );
 }
 

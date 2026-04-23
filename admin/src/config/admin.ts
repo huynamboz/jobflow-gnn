@@ -9,9 +9,10 @@ import {
   IconFileStack,
   IconRobot,
   IconScan,
-  IconSettings,
   IconSparkles,
   IconTags,
+  IconUserScan,
+  IconTagStarred,
 } from "@tabler/icons-react";
 
 export type AdminNavItem = {
@@ -29,24 +30,35 @@ export const adminConfig = {
   name: "JobFlow",
   navSections: [
     {
-      title: "GENERAL",
+      title: "General",
       items: [
-        { label: "Dashboard", href: "/admin", icon: IconLayoutDashboard },
-        { label: "Labeling", href: "/admin/labeling", icon: IconTags },
-        { label: "Models", href: "/admin/models", icon: IconBrain },
-        { label: "Jobs", href: "/admin/jobs", icon: IconBriefcase },
-        { label: "CVs", href: "/admin/cvs", icon: IconFiles },
+        { label: "Dashboard", href: "/admin",          icon: IconLayoutDashboard },
+        { label: "Models",    href: "/admin/models",   icon: IconBrain },
+        { label: "Labeling",  href: "/admin/labeling", icon: IconTags },
         { label: "Recommend", href: "/admin/recommend", icon: IconSparkles },
-        { label: "LLM Providers", href: "/admin/llm-providers", icon: IconRobot },
-        { label: "LLM Logs", href: "/admin/llm-logs", icon: IconClipboardList },
-        { label: "JD Extract", href: "/admin/jd-extract", icon: IconScan },
-        { label: "JD Batch", href: "/admin/jd-batch", icon: IconFileStack },
       ],
     },
     {
-      title: "ACCOUNT",
+      title: "Data",
       items: [
-        { label: "Settings", href: "/admin/settings", icon: IconSettings },
+        { label: "Jobs", href: "/admin/jobs", icon: IconBriefcase },
+        { label: "CVs",  href: "/admin/cvs",  icon: IconFiles },
+      ],
+    },
+    {
+      title: "AI",
+      items: [
+        { label: "LLM Providers", href: "/admin/llm-providers", icon: IconRobot },
+        { label: "LLM Logs",      href: "/admin/llm-logs",      icon: IconClipboardList },
+      ],
+    },
+    {
+      title: "Extraction",
+      items: [
+        { label: "JD Extract",   href: "/admin/jd-extract",   icon: IconScan },
+        { label: "JD Batch",     href: "/admin/jd-batch",     icon: IconFileStack },
+        { label: "CV Batch",     href: "/admin/cv-batch",     icon: IconUserScan },
+        { label: "Label Batch",  href: "/admin/label-batch",  icon: IconTagStarred },
       ],
     },
   ] as AdminNavSection[],

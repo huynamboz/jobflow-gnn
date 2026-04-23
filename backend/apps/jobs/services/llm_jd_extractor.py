@@ -50,7 +50,8 @@ def _load_system_prompt() -> str:
 
 
 def _strip_code_fence(text: str) -> str:
-    text = text.strip()
+    # Strip <think>…</think> blocks emitted by reasoning models
+    text = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
     match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", text)
     if match:
         return match.group(1).strip()
@@ -85,12 +86,12 @@ def extract(raw_text: str) -> JDExtractResult:
                 {"role": "user", "content": raw_text},
             ],
             temperature=0.0,
-            max_tokens=2048,
+            max_tokens=8192,
             feature="jd_extraction",
         )
     except Exception as exc:
         logger.warning("LLM call failed during JD extraction: %s", exc)
-        return JDExtractResult()
+        raise
 
     cleaned = _strip_code_fence(response)
     try:

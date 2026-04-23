@@ -13,8 +13,9 @@ import {
   IconX,
 } from "@tabler/icons-react";
 
+import { cn } from "@/lib/utils";
 import { jobService } from "@/services/job.service";
-import { T, LIMIT_OPTIONS } from "./_tokens";
+import { LIMIT_OPTIONS } from "./_tokens";
 import { Badge, Card, CardBody, CardHead, FieldChip, KeyframeStyle } from "./_primitives";
 
 export default function JDBatchNew() {
@@ -30,6 +31,7 @@ export default function JDBatchNew() {
   const [selectedFields, setSelectedFields] = useState<string[]>([]);
   const [limit, setLimit] = useState<number | null>(null);
   const [customLimit, setCustomLimit] = useState("");
+  const [workers, setWorkers] = useState(3);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -67,7 +69,7 @@ export default function JDBatchNew() {
     setStarting(true);
     setError("");
     try {
-      const batch = await jobService.createBatch(file, selectedFields, effectiveLimit);
+      const batch = await jobService.createBatch(file, selectedFields, effectiveLimit, workers);
       navigate(`/admin/jd-batch/${batch.id}`);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to start batch");
@@ -78,54 +80,46 @@ export default function JDBatchNew() {
   const steps = ["Upload", "Fields & prompt", "Run"];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="flex flex-col gap-5">
       <KeyframeStyle />
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 16 }}>
+      <div className="flex flex-col sm:flex-row sm:items-end gap-3">
         <div>
-          <h1 style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.025em", margin: 0, color: T.ink }}>
-            New <span style={{ fontStyle: "italic", color: T.accent, fontWeight: 400 }}>Batch</span>
+          <h1 className="text-[26px] sm:text-[32px] font-bold tracking-[-0.025em] m-0 text-jb-ink">
+            New <span className="italic text-jb-accent font-normal">Batch</span>
           </h1>
-          <p style={{ margin: "4px 0 0", color: T.ink3, fontSize: 14 }}>
+          <p className="mt-1 text-jb-ink3 text-sm m-0">
             Upload a JSONL file and configure the extraction prompt.
           </p>
         </div>
-        <div style={{ marginLeft: "auto" }}>
+        <div className="sm:ml-auto">
           <button
             type="button"
             onClick={() => navigate("/admin/jd-batch")}
-            style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "8px 14px", borderRadius: 10,
-              border: `1px solid ${T.line}`, background: T.surface,
-              cursor: "pointer", fontSize: 13, color: T.ink2, fontWeight: 500,
-            }}
+            className="flex items-center gap-1.5 py-2 px-3.5 rounded-[10px] border border-jb-line bg-jb-surface text-jb-ink2 text-[13px] font-medium"
           >
             <IconChevronLeft size={14} /> All batches
           </button>
         </div>
       </div>
 
-      <div style={{ maxWidth: 900 }}>
+      <div className="max-w-[900px]">
         {/* Wizard stepper */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28 }}>
+        <div className="flex items-center gap-2.5 mb-7">
           {steps.map((s, i) => (
-            <div key={s} style={{ display: "contents" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{
-                  width: 22, height: 22, borderRadius: "50%",
-                  background: i <= step ? T.accent : T.surface3,
-                  color: i <= step ? "#fff" : T.ink3,
-                  display: "grid", placeItems: "center",
-                  fontSize: 11, fontWeight: 700,
-                }}>
+            <div key={s} className="contents">
+              <div className="flex items-center gap-2">
+                <div className={cn(
+                  "w-[22px] h-[22px] rounded-full grid place-items-center text-[11px] font-bold",
+                  i <= step ? "bg-jb-accent text-white" : "bg-jb-surface3 text-jb-ink3",
+                )}>
                   {i < step ? <IconCircleCheck size={12} /> : i + 1}
                 </div>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: i === step ? T.ink : T.ink3 }}>{s}</span>
+                <span className={cn("text-[12.5px] font-semibold", i === step ? "text-jb-ink" : "text-jb-ink3")}>{s}</span>
               </div>
               {i < steps.length - 1 && (
-                <div style={{ flex: 1, height: 1.5, background: i < step ? T.accent : T.surface3 }} />
+                <div className={cn("flex-1 h-[1.5px]", i < step ? "bg-jb-accent" : "bg-jb-surface3")} />
               )}
             </div>
           ))}
@@ -133,25 +127,22 @@ export default function JDBatchNew() {
 
         {/* Step 0 — Upload */}
         {step === 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div className="flex flex-col gap-4">
             <div>
-              <h2 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.025em", margin: 0, color: T.ink }}>
-                Upload a <span style={{ fontStyle: "italic", color: T.accent }}>JSONL</span> file
+              <h2 className="text-[28px] font-bold tracking-[-0.025em] m-0 text-jb-ink">
+                Upload a <span className="italic text-jb-accent">JSONL</span> file
               </h2>
-              <p style={{ marginTop: 4, color: T.ink3, fontSize: 14 }}>
+              <p className="mt-1 text-jb-ink3 text-sm">
                 One JSON object per line. Each object becomes one LLM extraction job.
               </p>
             </div>
 
             {!file ? (
               <label
-                style={{
-                  display: "block",
-                  border: `2px dashed ${dragging ? T.accent : T.lineStrong}`,
-                  borderRadius: 24, padding: "48px 24px", textAlign: "center",
-                  background: dragging ? T.accent50 : `color-mix(in oklch,${T.surface2} 70%,transparent)`,
-                  cursor: "pointer",
-                }}
+                className={cn(
+                  "block border-2 border-dashed rounded-3xl px-6 py-12 text-center cursor-pointer transition-colors",
+                  dragging ? "border-jb-accent bg-jb-accent50" : "border-jb-linestrong bg-jb-surface2/70",
+                )}
                 onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
                 onDrop={(e) => {
@@ -161,63 +152,50 @@ export default function JDBatchNew() {
               >
                 <input
                   ref={inputRef} type="file" accept=".jsonl,.json"
-                  style={{ display: "none" }}
+                  className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) loadFile(f); }}
                 />
-                <div style={{
-                  width: 56, height: 56, borderRadius: 16, background: T.surface,
-                  margin: "0 auto 16px", display: "grid", placeItems: "center",
-                  color: T.accent, boxShadow: "0 1px 2px rgba(20,18,30,0.04)",
-                }}>
+                <div className="w-14 h-14 rounded-2xl bg-jb-surface mx-auto mb-4 grid place-items-center text-jb-accent shadow-[0_1px_2px_rgba(20,18,30,0.04)]">
                   <IconUpload size={22} />
                 </div>
-                <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.01em", margin: "0 0 4px", color: T.ink }}>
+                <div className="text-[18px] font-bold tracking-[-0.01em] mb-1 text-jb-ink">
                   Drop your .jsonl file here
                 </div>
-                <p style={{ margin: 0, color: T.ink3, fontSize: 13 }}>
+                <p className="m-0 text-jb-ink3 text-[13px]">
                   or{" "}
-                  <span style={{ color: T.accent, fontWeight: 600, textDecoration: "underline" }}>
+                  <span className="text-jb-accent font-semibold underline">
                     browse from your computer
                   </span>{" "}
                   — max 50 MB
                 </p>
               </label>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div className="flex flex-col gap-3.5">
                 <Card>
-                  <CardBody style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <CardBody className="flex items-center gap-3.5">
                     {loading ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, color: T.ink3 }}>
-                        <IconLoader2 size={20} style={{ animation: "jb-spin 0.7s linear infinite" }} />
-                        <span style={{ fontSize: 13 }}>Reading file…</span>
+                      <div className="flex items-center gap-3 text-jb-ink3">
+                        <IconLoader2 size={20} className="animate-[jb-spin_0.7s_linear_infinite]" />
+                        <span className="text-[13px]">Reading file…</span>
                       </div>
                     ) : (
                       <>
-                        <div style={{
-                          width: 44, height: 44, borderRadius: 12,
-                          background: T.accent50, color: T.accent,
-                          display: "grid", placeItems: "center", flexShrink: 0,
-                        }}>
+                        <div className="w-11 h-11 rounded-xl bg-jb-accent50 text-jb-accent grid place-items-center shrink-0">
                           <IconFileText size={20} />
                         </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 700 }}>{file.name}</div>
-                          <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold">{file.name}</div>
+                          <div className="text-[12.5px] text-jb-ink3 mt-0.5">
                             {(file.size / 1024).toFixed(1)} KB
                             {preview && (
-                              <> · <strong style={{ color: T.ink2 }}>{preview.total}</strong> rows detected</>
+                              <> · <strong className="text-jb-ink2">{preview.total}</strong> rows detected</>
                             )}
                           </div>
                         </div>
                         <button
                           type="button"
                           onClick={() => { setFile(null); setPreview(null); setSelectedFields([]); }}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 6,
-                            padding: "6px 10px", borderRadius: 8,
-                            border: `1px solid ${T.line}`, background: T.surface2,
-                            cursor: "pointer", fontSize: 12.5, color: T.ink2,
-                          }}
+                          className="flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg border border-jb-line bg-jb-surface2 text-jb-ink2 text-[12.5px]"
                         >
                           <IconX size={14} /> Remove
                         </button>
@@ -229,27 +207,18 @@ export default function JDBatchNew() {
                 {preview && (
                   <Card>
                     <CardHead>
-                      <span style={{ fontWeight: 600, fontSize: 15 }}>Preview rows</span>
+                      <span className="font-semibold text-[15px]">Preview rows</span>
                       <Badge status="pending" label={`${preview.total} total`} />
                     </CardHead>
                     <CardBody>
                       {preview.sample.slice(0, 3).map((row, i) => (
-                        <div key={i} style={{
-                          display: "grid", gridTemplateColumns: "auto 1fr auto",
-                          gap: 12, alignItems: "center",
-                          padding: 12, marginBottom: 8, borderRadius: 12,
-                          border: `1px dashed ${T.lineStrong}`,
-                          background: `color-mix(in oklch,${T.surface2} 50%,transparent)`,
-                        }}>
-                          <span style={{ fontFamily: "monospace", fontSize: 12, color: T.ink4 }}>#{i + 1}</span>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 600, fontSize: 13.5 }}>
+                        <div key={i} className="grid grid-cols-[auto_1fr_auto] gap-3 items-center p-3 mb-2 rounded-xl border border-dashed border-jb-linestrong bg-jb-surface2/50">
+                          <span className="font-mono text-xs text-jb-ink4">#{i + 1}</span>
+                          <div className="min-w-0">
+                            <div className="font-semibold text-[13.5px]">
                               {String(row.title ?? row.job_title ?? "—")}
                             </div>
-                            <div style={{
-                              fontFamily: "monospace", fontSize: 11, color: T.ink3,
-                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2,
-                            }}>
+                            <div className="font-mono text-[11px] text-jb-ink3 overflow-hidden text-ellipsis whitespace-nowrap mt-0.5">
                               {JSON.stringify(row).slice(0, 80)}…
                             </div>
                           </div>
@@ -257,7 +226,7 @@ export default function JDBatchNew() {
                         </div>
                       ))}
                       {preview.total > 3 && (
-                        <div style={{ textAlign: "center", fontSize: 12, color: T.ink3, marginTop: 8 }}>
+                        <div className="text-center text-xs text-jb-ink3 mt-2">
                           + {preview.total - 3} more rows
                         </div>
                       )}
@@ -265,10 +234,10 @@ export default function JDBatchNew() {
                   </Card>
                 )}
 
-                {error && <p style={{ color: T.danger, fontSize: 13 }}>{error}</p>}
+                {error && <p className="text-jb-danger text-[13px]">{error}</p>}
 
                 {preview && (
-                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <div className="flex justify-end">
                     <Button color="primary" endContent={<IconChevronRight size={16} />} onPress={() => setStep(1)}>
                       Continue — pick fields
                     </Button>
@@ -282,38 +251,34 @@ export default function JDBatchNew() {
         {/* Step 1 — Fields & config */}
         {step === 1 && preview && (
           <div>
-            <div style={{ marginBottom: 24 }}>
-              <h2 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.025em", margin: "0 0 4px", color: T.ink }}>
-                Build the <span style={{ fontStyle: "italic", color: T.accent }}>extraction prompt</span>
+            <div className="mb-6">
+              <h2 className="text-[28px] font-bold tracking-[-0.025em] m-0 mb-1 text-jb-ink">
+                Build the <span className="italic text-jb-accent">extraction prompt</span>
               </h2>
-              <p style={{ color: T.ink3, fontSize: 14, margin: 0 }}>
+              <p className="text-jb-ink3 text-sm m-0">
                 Click fields to include them in the prompt sent to the LLM per row.
               </p>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
               {/* Left — field picker */}
               <Card>
                 <CardHead>
-                  <span style={{ fontWeight: 600, fontSize: 15 }}>Fields from row</span>
-                  <span style={{ fontSize: 12, color: T.ink3 }}>
+                  <span className="font-semibold text-[15px]">Fields from row</span>
+                  <span className="text-xs text-jb-ink3">
                     {selectedFields.length} of {preview.fields.length} selected
                   </span>
-                  <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                  <div className="ml-auto flex gap-1.5">
                     {([["All", preview.fields], ["None", []]] as [string, string[]][]).map(([lbl, val]) => (
                       <button key={lbl} type="button" onClick={() => setSelectedFields(val)}
-                        style={{
-                          padding: "4px 10px", borderRadius: 8,
-                          border: `1px solid ${T.line}`, background: T.surface2,
-                          cursor: "pointer", fontSize: 12, color: T.ink2,
-                        }}>
+                        className="py-1 px-2.5 rounded-lg border border-jb-line bg-jb-surface2 text-jb-ink2 text-xs">
                         {lbl}
                       </button>
                     ))}
                   </div>
                 </CardHead>
                 <CardBody>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  <div className="flex flex-wrap gap-1.5">
                     {preview.fields.map((f) => (
                       <FieldChip key={f} label={f} on={selectedFields.includes(f)} onClick={() => toggleField(f)} />
                     ))}
@@ -321,26 +286,20 @@ export default function JDBatchNew() {
                 </CardBody>
               </Card>
 
-              {/* Right — preview + config */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 16, position: "sticky", top: 90 }}>
+              {/* Right — preview + config (sticky on desktop) */}
+              <div className="flex flex-col gap-4 md:sticky md:top-[90px]">
                 <Card>
                   <CardHead>
-                    <span style={{ fontWeight: 600, fontSize: 15 }}>Prompt preview</span>
-                    <span style={{ fontSize: 11.5, color: T.ink3 }}>row #1 — what LLM will see</span>
+                    <span className="font-semibold text-[15px]">Prompt preview</span>
+                    <span className="text-[11.5px] text-jb-ink3">row #1 — what LLM will see</span>
                   </CardHead>
                   <CardBody>
                     {selectedFields.length === 0 ? (
-                      <div style={{ padding: "24px 0", textAlign: "center", color: T.ink4, fontSize: 13 }}>
+                      <div className="py-6 text-center text-jb-ink4 text-[13px]">
                         Select at least one field to build the prompt.
                       </div>
                     ) : (
-                      <pre style={{
-                        background: "oklch(0.2 0.02 265)", color: "oklch(0.94 0.008 85)",
-                        borderRadius: 12, padding: "12px 14px",
-                        fontFamily: "'JetBrains Mono',ui-monospace,monospace",
-                        fontSize: 11.5, lineHeight: 1.6, maxHeight: 280, overflow: "auto",
-                        margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word",
-                      }}>
+                      <pre className="bg-jb-dark text-jb-dark-text2 rounded-xl px-3.5 py-3 font-mono text-[11.5px] leading-[1.6] max-h-[280px] overflow-auto m-0 whitespace-pre-wrap break-words">
                         {previewText}
                       </pre>
                     )}
@@ -348,9 +307,9 @@ export default function JDBatchNew() {
                 </Card>
 
                 <Card>
-                  <CardHead><span style={{ fontWeight: 600, fontSize: 15 }}>Record limit</span></CardHead>
+                  <CardHead><span className="font-semibold text-[15px]">Record limit</span></CardHead>
                   <CardBody>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+                    <div className="flex flex-wrap gap-1.5 mb-3.5">
                       {LIMIT_OPTIONS.map((opt) => (
                         <FieldChip
                           key={String(opt.value)}
@@ -365,9 +324,9 @@ export default function JDBatchNew() {
                           value={customLimit} onValueChange={setCustomLimit} />
                       )}
                     </div>
-                    <p style={{ fontSize: 12.5, color: T.ink3, margin: 0 }}>
+                    <p className="text-[12.5px] text-jb-ink3 m-0">
                       Will process{" "}
-                      <strong style={{ color: T.ink }}>
+                      <strong className="text-jb-ink">
                         {(effectiveLimit == null
                           ? preview.total
                           : Math.min(effectiveLimit, preview.total)
@@ -378,15 +337,28 @@ export default function JDBatchNew() {
                   </CardBody>
                 </Card>
 
-                {error && <p style={{ color: T.danger, fontSize: 13 }}>{error}</p>}
+                <Card>
+                  <CardHead><span className="font-semibold text-[15px]">Parallel workers</span></CardHead>
+                  <CardBody>
+                    <div className="flex items-center gap-3 mb-3">
+                      <button type="button" onClick={() => setWorkers((w) => Math.max(1, w - 1))}
+                        className="w-8 h-8 rounded-lg bg-jb-surface2 text-jb-ink2 text-base font-bold flex items-center justify-center border border-jb-line">−</button>
+                      <span className="text-[22px] font-bold text-jb-ink tabular-nums w-8 text-center">{workers}</span>
+                      <button type="button" onClick={() => setWorkers((w) => Math.min(20, w + 1))}
+                        className="w-8 h-8 rounded-lg bg-jb-surface2 text-jb-ink2 text-base font-bold flex items-center justify-center border border-jb-line">+</button>
+                      <span className="text-xs text-jb-ink3 ml-1">concurrent LLM calls</span>
+                    </div>
+                    <p className="text-[12px] text-jb-ink3 m-0">
+                      Higher = faster but risks rate limiting. Recommended: 3–5 for most providers.
+                    </p>
+                  </CardBody>
+                </Card>
 
-                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                {error && <p className="text-jb-danger text-[13px]">{error}</p>}
+
+                <div className="flex gap-2 justify-end">
                   <button type="button" onClick={() => setStep(0)}
-                    style={{
-                      padding: "9px 14px", borderRadius: 12,
-                      border: `1px solid ${T.line}`, background: T.surface2,
-                      cursor: "pointer", fontSize: 13, fontWeight: 600, color: T.ink2,
-                    }}>
+                    className="py-[9px] px-3.5 rounded-xl border border-jb-line bg-jb-surface2 text-jb-ink2 text-[13px] font-semibold">
                     Back
                   </button>
                   <Button

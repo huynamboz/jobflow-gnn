@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardBody } from "@heroui/card";
-import { Briefcase, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Briefcase, ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 
 import { jobService } from "@/services/job.service";
 import type { JobDetail, JobListItem } from "@/types/job.types";
@@ -120,6 +120,7 @@ export default function JobsPage() {
   const [seniority, setSeniority] = useState("");
   const [jobType, setJobType] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const load = useCallback((p: number, s: string, sen: string, jt: string) => {
     setLoading(true);
@@ -144,9 +145,23 @@ export default function JobsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-default-900">Job Postings</h1>
-        <p className="text-default-500">{total.toLocaleString()} jobs in system</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-default-900">Job Postings</h1>
+          <p className="text-default-500">{total.toLocaleString()} jobs in system</p>
+        </div>
+        <button
+          onClick={async () => {
+            setExporting(true);
+            try { await jobService.exportJDs(); }
+            finally { setExporting(false); }
+          }}
+          disabled={exporting}
+          className="flex items-center gap-2 rounded-xl border border-default-200 bg-white px-4 py-2 text-sm font-medium text-default-700 hover:bg-default-50 disabled:opacity-50"
+        >
+          <Download className="size-4" />
+          {exporting ? "Exporting…" : "Export JDs JSON"}
+        </button>
       </div>
 
       <form onSubmit={handleSearch} className="flex flex-wrap gap-3">

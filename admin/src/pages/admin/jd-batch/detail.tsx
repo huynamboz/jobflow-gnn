@@ -13,9 +13,10 @@ import {
   IconSquare,
 } from "@tabler/icons-react";
 
+import { cn } from "@/lib/utils";
 import { jobService } from "@/services/job.service";
 import type { JDBatchDetail, JDBatchRecord, RecordStatus } from "@/types/job.types";
-import { T, POLL_INTERVAL, PAGE_SIZE, fmtDate, eta } from "./_tokens";
+import { POLL_INTERVAL, PAGE_SIZE, fmtDate, eta } from "./_tokens";
 import {
   Badge, type BadgeStatus,
   Card, CardBody, CardHead,
@@ -38,6 +39,8 @@ export default function JDBatchDetail() {
   const [tab, setTab] = useState<"records" | "config">("records");
   const [selected, setSelected] = useState<JDBatchRecord | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [resuming, setResuming] = useState(false);
+  const [workers, setWorkers] = useState<number>(3);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async (p: number, sf: string) => {
@@ -46,6 +49,9 @@ export default function JDBatchDetail() {
   }, [batchId]);
 
   useEffect(() => { load(page, statusFilter); }, [load, page, statusFilter]);
+
+  // Sync workers from batch once loaded
+  useEffect(() => { if (detail) setWorkers(detail.batch.workers); }, [detail?.batch.workers]);
 
   useEffect(() => {
     if (detail?.batch.status !== "running") return;
@@ -65,10 +71,17 @@ export default function JDBatchDetail() {
     finally { setCancelling(false); }
   };
 
+  const handleResume = async () => {
+    if (!detail) return;
+    setResuming(true);
+    try { await jobService.resumeBatch(batchId, workers); await load(page, statusFilter); }
+    finally { setResuming(false); }
+  };
+
   if (!detail) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 160, color: T.ink3 }}>
-        <IconLoader2 size={20} style={{ animation: "jb-spin 0.7s linear infinite" }} />
+      <div className="flex items-center justify-center h-40 text-jb-ink3">
+        <IconLoader2 size={20} className="animate-[jb-spin_0.7s_linear_infinite]" />
       </div>
     );
   }
@@ -76,7 +89,7 @@ export default function JDBatchDetail() {
   const { batch, records, total_records } = detail;
   const totalPages = Math.ceil(total_records / PAGE_SIZE);
   const processed = batch.done_count + batch.error_count;
-  const pct = batch.total > 0 ? (processed / batch.total) * 100 : 0;
+  const pct = batch.total > 0 ? (batch.done_count / batch.total) * 100 : 0;
   const running = batch.status === "running";
   const etaStr = eta(batch);
 
@@ -98,127 +111,128 @@ export default function JDBatchDetail() {
     { label: "Pending", value: "pending" },
   ];
 
-  const thStyle = (w?: number): React.CSSProperties => ({
-    textAlign: "left", fontSize: 11, fontWeight: 600,
-    color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em",
-    padding: "12px 16px", borderBottom: `1px solid ${T.line}`,
-    background: T.surface2, width: w,
-  });
-  const tdStyle: React.CSSProperties = {
-    padding: "13px 16px", borderBottom: `1px solid ${T.line}`, verticalAlign: "middle",
-  };
+  const thCls = "text-left text-[11px] font-semibold text-jb-ink3 uppercase tracking-[0.06em] px-4 py-3 border-b border-jb-line bg-jb-surface2";
+  const tdCls = "px-4 py-[13px] border-b border-jb-line align-middle";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="flex flex-col gap-5">
       <KeyframeStyle />
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="flex items-start gap-4 flex-wrap">
+        <div className="flex-1 min-w-0">
           <button
             type="button"
             onClick={() => navigate("/admin/jd-batch")}
-            style={{
-              background: "transparent", border: "none", color: T.ink3, fontSize: 12.5,
-              cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
-              padding: 0, marginBottom: 10, fontWeight: 500,
-            }}
+            className="bg-transparent border-none text-jb-ink3 text-[12.5px] cursor-pointer flex items-center gap-1 p-0 mb-2.5 font-medium"
           >
             <IconChevronLeft size={13} /> All batches
           </button>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <h2 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.025em", margin: 0, color: T.ink }}>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-[28px] font-bold tracking-[-0.025em] m-0 text-jb-ink">
               Batch #{batch.id}
             </h2>
             <Badge status={batch.status as BadgeStatus} />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 8, flexWrap: "wrap", color: T.ink3, fontSize: 13 }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <div className="flex items-center gap-3.5 mt-2 flex-wrap text-jb-ink3 text-[13px]">
+            <span className="flex items-center gap-[5px]">
               <IconFileText size={13} />{batch.file_path.split("/").pop()}
             </span>
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span className="flex items-center gap-[5px]">
               <IconClock size={13} />{fmtDate(batch.created_at)}
             </span>
             {etaStr && (
-              <span style={{ display: "flex", alignItems: "center", gap: 5, color: T.accent }}>
-                <IconLoader2 size={13} style={{ animation: "jb-spin 1.5s linear infinite" }} />{etaStr}
+              <span className="flex items-center gap-[5px] text-jb-accent">
+                <IconLoader2 size={13} className="animate-[jb-spin_1.5s_linear_infinite]" />{etaStr}
               </span>
             )}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", paddingTop: 28 }}>
+
+        {/* Action buttons */}
+        <div className="flex gap-2 items-center flex-wrap pt-0 sm:pt-7">
+          {/* Workers spinner — visible when not running */}
+          {!running && (
+            <div className="flex items-center gap-1.5 border border-jb-line rounded-[10px] px-2.5 py-1.5 bg-jb-surface">
+              <span className="text-[11px] font-semibold text-jb-ink3 uppercase tracking-wide">Workers</span>
+              <button type="button" onClick={() => setWorkers((w) => Math.max(1, w - 1))}
+                className="w-5 h-5 rounded-md bg-jb-surface2 text-jb-ink2 text-xs font-bold flex items-center justify-center border-none leading-none">−</button>
+              <span className="text-[13px] font-bold text-jb-ink w-4 text-center tabular-nums">{workers}</span>
+              <button type="button" onClick={() => setWorkers((w) => Math.min(20, w + 1))}
+                className="w-5 h-5 rounded-md bg-jb-surface2 text-jb-ink2 text-xs font-bold flex items-center justify-center border-none leading-none">+</button>
+            </div>
+          )}
+          {!running && batch.done_count < batch.total && (
+            <button
+              type="button" onClick={handleResume} disabled={resuming}
+              className="flex items-center gap-1.5 py-2 px-3.5 rounded-[10px] border-none bg-jb-accent50 text-jb-accent600 text-[13px] font-semibold"
+            >
+              {resuming
+                ? <IconLoader2 size={13} className="animate-[jb-spin_0.7s_linear_infinite]" />
+                : <IconRefresh size={13} />}
+              {resuming ? "Resuming…" : `Resume · ${batch.total - batch.done_count} to retry`}
+            </button>
+          )}
           {running && (
-            <button type="button" onClick={handleCancel} disabled={cancelling}
-              style={{
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "8px 14px", borderRadius: 10, border: "none",
-                background: T.danger50, color: T.danger, cursor: "pointer", fontSize: 13, fontWeight: 600,
-              }}>
+            <button
+              type="button" onClick={handleCancel} disabled={cancelling}
+              className="flex items-center gap-1.5 py-2 px-3.5 rounded-[10px] border-none bg-jb-danger50 text-jb-danger text-[13px] font-semibold"
+            >
               {cancelling
-                ? <IconLoader2 size={13} style={{ animation: "jb-spin 0.7s linear infinite" }} />
+                ? <IconLoader2 size={13} className="animate-[jb-spin_0.7s_linear_infinite]" />
                 : <IconSquare size={13} />}
               {cancelling ? "Cancelling…" : "Cancel"}
             </button>
           )}
-          <button type="button" onClick={() => load(page, statusFilter)}
-            style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "8px 14px", borderRadius: 10,
-              border: `1px solid ${T.line}`, background: T.surface, cursor: "pointer", fontSize: 13, color: T.ink2,
-            }}>
+          <button
+            type="button" onClick={() => load(page, statusFilter)}
+            className="flex items-center gap-1.5 py-2 px-3.5 rounded-[10px] border border-jb-line bg-jb-surface text-jb-ink2 text-[13px]"
+          >
             <IconRefresh size={13} /> Refresh
           </button>
-          <button type="button" title="Export"
-            style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "8px 14px", borderRadius: 10,
-              border: `1px solid ${T.line}`, background: T.surface, cursor: "pointer", fontSize: 13, color: T.ink2,
-            }}>
+          <button
+            type="button" title="Export"
+            className="flex items-center gap-1.5 py-2 px-3.5 rounded-[10px] border border-jb-line bg-jb-surface text-jb-ink2 text-[13px]"
+          >
             <IconDownload size={13} /> Export
           </button>
         </div>
       </div>
 
       {/* Stats grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard
           label="Progress" value={`${pct.toFixed(0)}%`}
           accent={running}
           extra={
-            <div style={{ marginTop: 10 }}>
-              <ProgressBar value={processed} total={batch.total} running={running} done={batch.status === "done"} />
+            <div className="mt-2.5">
+              <ProgressBar value={batch.done_count} errors={batch.error_count} total={batch.total} running={running} done={batch.status === "done"} />
             </div>
           }
         />
         <StatCard
           label="Completed"
-          value={<span style={{ color: T.success }}>{batch.done_count}</span>}
+          value={<span className="text-jb-success">{batch.done_count}</span>}
           unit={`/ ${batch.total} rows`}
         />
         <StatCard
           label="Errors"
-          value={<span style={{ color: batch.error_count > 0 ? T.danger : T.ink }}>{batch.error_count}</span>}
+          value={<span className={batch.error_count > 0 ? "text-jb-danger" : "text-jb-ink"}>{batch.error_count}</span>}
           unit={batch.error_count === 0 ? "clean" : "need retry"}
         />
         <StatCard label="Fields" value={batch.fields_config.length} unit="combined per row" />
       </div>
 
       {/* Prompt fields + live log */}
-      <div style={{ display: "grid", gridTemplateColumns: running ? "1fr 380px" : "1fr", gap: 16 }}>
+      <div className={cn("grid gap-4", running ? "sm:grid-cols-[1fr_380px]" : "grid-cols-1")}>
         <Card>
           <CardHead>
-            <span style={{ fontWeight: 600, fontSize: 15 }}>Prompt fields</span>
-            <span style={{ fontSize: 11.5, color: T.ink3 }}>{batch.fields_config.length} fields combined per row</span>
+            <span className="font-semibold text-[15px]">Prompt fields</span>
+            <span className="text-[11.5px] text-jb-ink3">{batch.fields_config.length} fields combined per row</span>
           </CardHead>
-          <CardBody style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          <CardBody className="flex flex-wrap gap-1.5">
             {batch.fields_config.map((f) => (
-              <span key={f} style={{
-                display: "inline-flex", alignItems: "center", gap: 5,
-                padding: "6px 11px", borderRadius: 999,
-                background: T.ink, color: "#fff", border: `1px solid ${T.ink}`,
-                fontSize: 12, fontWeight: 500,
-                fontFamily: "'JetBrains Mono',ui-monospace,monospace",
-              }}>
+              <span key={f} className="inline-flex items-center gap-[5px] px-[11px] py-1.5 rounded-full bg-jb-ink text-white border border-jb-ink text-xs font-medium font-mono">
                 <IconCircleCheck size={11} color="#fff" />
                 {f}
               </span>
@@ -229,43 +243,36 @@ export default function JDBatchDetail() {
         {running && (
           <Card>
             <CardHead>
-              <span style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600, fontSize: 15 }}>
+              <span className="flex items-center gap-1.5 font-semibold text-[15px]">
                 Live log
-                <span style={{
-                  width: 6, height: 6, borderRadius: "50%", background: T.accent,
-                  animation: "jb-pulse 1.4s infinite", display: "inline-block",
-                }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-jb-accent inline-block animate-[jb-pulse_1.4s_infinite]" />
               </span>
-              <span style={{ marginLeft: "auto", fontSize: 11, color: T.ink4, fontFamily: "monospace" }}>streaming</span>
+              <span className="ml-auto text-[11px] text-jb-ink4 font-mono">streaming</span>
             </CardHead>
-            <CardBody style={{ padding: 12 }}>
-              <div style={{
-                background: "oklch(0.2 0.02 265)", color: "oklch(0.9 0.01 85)", borderRadius: 12,
-                padding: "10px 12px", fontFamily: "'JetBrains Mono',ui-monospace,monospace",
-                fontSize: 11, lineHeight: 1.65, maxHeight: 220, overflow: "auto",
-              }}>
+            <CardBody className="p-3">
+              <div className="bg-jb-dark text-jb-dark-text rounded-xl px-3 py-2.5 font-mono text-[11px] leading-[1.65] max-h-[220px] overflow-auto">
                 <div>
-                  <span style={{ color: "oklch(0.55 0.02 265)", marginRight: 8 }}>{new Date().toTimeString().slice(0, 8)}</span>
-                  <span style={{ color: "oklch(0.72 0.15 235)" }}>INFO</span>
+                  <span className="text-jb-code-dim mr-2">{new Date().toTimeString().slice(0, 8)}</span>
+                  <span className="text-jb-code-blue">INFO</span>
                   {" "}POST /extract rec-{batch.done_count + 1}
                 </div>
                 {batch.done_count > 0 && (
                   <div>
-                    <span style={{ color: "oklch(0.55 0.02 265)", marginRight: 8 }}>{new Date(Date.now() - 7000).toTimeString().slice(0, 8)}</span>
-                    <span style={{ color: "oklch(0.75 0.17 150)" }}>OK</span>
+                    <span className="text-jb-code-dim mr-2">{new Date(Date.now() - 7000).toTimeString().slice(0, 8)}</span>
+                    <span className="text-jb-code-green">OK</span>
                     {" "}rec-{batch.done_count} extracted (1.8s, 612 tok)
                   </div>
                 )}
                 {batch.error_count > 0 && (
                   <div>
-                    <span style={{ color: "oklch(0.55 0.02 265)", marginRight: 8 }}>{new Date(Date.now() - 20000).toTimeString().slice(0, 8)}</span>
-                    <span style={{ color: "oklch(0.72 0.18 25)" }}>ERR</span>
+                    <span className="text-jb-code-dim mr-2">{new Date(Date.now() - 20000).toTimeString().slice(0, 8)}</span>
+                    <span className="text-jb-code-red">ERR</span>
                     {" "}timeout — will retry
                   </div>
                 )}
                 <div>
-                  <span style={{ color: "oklch(0.55 0.02 265)", marginRight: 8 }}>{new Date(Date.now() - 60000).toTimeString().slice(0, 8)}</span>
-                  <span style={{ color: "oklch(0.72 0.15 235)" }}>INFO</span>
+                  <span className="text-jb-code-dim mr-2">{new Date(Date.now() - 60000).toTimeString().slice(0, 8)}</span>
+                  <span className="text-jb-code-blue">INFO</span>
                   {" "}Batch #{batch.id} started · {batch.total} rows queued
                 </div>
               </div>
@@ -276,17 +283,19 @@ export default function JDBatchDetail() {
 
       {/* Records card with tabs */}
       <Card>
-        <div style={{ padding: "12px 20px", borderBottom: `1px solid ${T.line}`, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", padding: 3, background: T.surface2, borderRadius: 10, gap: 2 }}>
+        {/* Tab bar */}
+        <div className="px-4 py-3 border-b border-jb-line flex items-center gap-2.5 flex-wrap">
+          <div className="flex p-[3px] bg-jb-surface2 rounded-[10px] gap-0.5">
             {tabOptions.map((o) => (
-              <button key={o.value} type="button" onClick={() => setTab(o.value as "records" | "config")}
-                style={{
-                  border: "none", padding: "6px 12px", borderRadius: 8,
-                  fontSize: 12.5, fontWeight: 600, cursor: "pointer",
-                  background: tab === o.value ? T.surface : "transparent",
-                  color: tab === o.value ? T.ink : T.ink2,
-                  boxShadow: tab === o.value ? "0 1px 2px rgba(20,18,30,0.04)" : "none",
-                }}>
+              <button
+                key={o.value} type="button" onClick={() => setTab(o.value as "records" | "config")}
+                className={cn(
+                  "border-none px-3 py-1.5 rounded-lg text-[12.5px] font-semibold",
+                  tab === o.value
+                    ? "bg-jb-surface text-jb-ink shadow-[0_1px_2px_rgba(20,18,30,0.04)]"
+                    : "bg-transparent text-jb-ink2",
+                )}
+              >
                 {o.label}
               </button>
             ))}
@@ -294,9 +303,9 @@ export default function JDBatchDetail() {
 
           {tab === "records" && (
             <>
-              <div style={{ marginLeft: "auto" }} />
-              <div style={{ position: "relative" }}>
-                <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: T.ink3, pointerEvents: "none" }}>
+              <div className="flex-1 sm:flex-none sm:ml-auto" />
+              <div className="relative w-full sm:w-auto">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-jb-ink3 pointer-events-none">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
                   </svg>
@@ -304,11 +313,7 @@ export default function JDBatchDetail() {
                 <input
                   value={search} onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search…"
-                  style={{
-                    padding: "7px 10px 7px 30px", fontSize: 12.5, borderRadius: 8,
-                    border: `1px solid ${T.line}`, background: T.surface,
-                    outline: "none", color: T.ink, width: 200,
-                  }}
+                  className="py-[7px] pr-[10px] pl-[30px] text-[12.5px] rounded-lg border border-jb-line bg-jb-surface outline-none text-jb-ink w-full sm:w-[200px]"
                 />
               </div>
               <SegBtn
@@ -324,40 +329,43 @@ export default function JDBatchDetail() {
           <>
             {visibleRecords.length === 0 ? (
               <CardBody>
-                <div style={{ textAlign: "center", color: T.ink3, padding: "20px 0" }}>No records match.</div>
+                <div className="text-center text-jb-ink3 py-5">No records match.</div>
               </CardBody>
             ) : (
-              <div style={{ maxHeight: 560, overflow: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
+              <div className="max-h-[560px] overflow-auto">
+                <table className="w-full min-w-[560px] border-separate border-spacing-0 text-[13px]">
                   <thead>
                     <tr>
-                      <th style={thStyle(44)}>#</th>
-                      <th style={thStyle()}>Title</th>
-                      <th style={thStyle()}>Company</th>
-                      <th style={thStyle()}>Location</th>
-                      <th style={thStyle(120)}>Status</th>
-                      <th style={{ ...thStyle(40), textAlign: "right" }}></th>
+                      <th className={thCls} style={{ width: 44 }}>#</th>
+                      <th className={thCls}>Title</th>
+                      <th className={thCls}>Company</th>
+                      <th className={thCls}>Location</th>
+                      <th className={thCls} style={{ width: 120 }}>Status</th>
+                      <th className={cn(thCls, "text-right")} style={{ width: 40 }}></th>
                     </tr>
                   </thead>
                   <tbody>
                     {visibleRecords.map((rec) => (
-                      <tr key={rec.id} className="jb-row" onClick={() => setSelected(rec)}
-                        style={{ cursor: "pointer", background: rec.status === "processing" ? "oklch(0.96 0.02 240)" : undefined }}>
-                        <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 12, color: T.ink4 }}>
+                      <tr
+                        key={rec.id} className="jb-row cursor-pointer"
+                        onClick={() => setSelected(rec)}
+                        style={{ background: rec.status === "processing" ? "oklch(0.96 0.02 240)" : undefined }}
+                      >
+                        <td className={cn(tdCls, "font-mono text-xs text-jb-ink4")}>
                           {String(rec.index + 1).padStart(2, "0")}
                         </td>
-                        <td style={{ ...tdStyle, fontWeight: 600, color: T.ink, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {rec.title || <span style={{ color: T.ink4, fontStyle: "italic" }}>—</span>}
+                        <td className={cn(tdCls, "font-semibold text-jb-ink max-w-[260px] overflow-hidden text-ellipsis whitespace-nowrap")}>
+                          {rec.title || <span className="text-jb-ink4 italic">—</span>}
                         </td>
-                        <td style={{ ...tdStyle, color: T.ink2 }}>
-                          {rec.company || <span style={{ color: T.ink4 }}>—</span>}
+                        <td className={cn(tdCls, "text-jb-ink2")}>
+                          {rec.company || <span className="text-jb-ink4">—</span>}
                         </td>
-                        <td style={{ ...tdStyle, color: T.ink3 }}>
-                          {rec.result?.location || <span style={{ color: T.ink4 }}>—</span>}
+                        <td className={cn(tdCls, "text-jb-ink3")}>
+                          {rec.result?.location || <span className="text-jb-ink4">—</span>}
                         </td>
-                        <td style={tdStyle}><Badge status={rec.status as BadgeStatus} /></td>
-                        <td style={{ ...tdStyle, textAlign: "right" }}>
-                          <IconChevronRight size={14} color={T.ink4} />
+                        <td className={tdCls}><Badge status={rec.status as BadgeStatus} /></td>
+                        <td className={cn(tdCls, "text-right")}>
+                          <IconChevronRight size={14} className="text-jb-ink4" />
                         </td>
                       </tr>
                     ))}
@@ -367,9 +375,9 @@ export default function JDBatchDetail() {
             )}
 
             {totalPages > 1 && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderTop: `1px solid ${T.line}` }}>
-                <span style={{ fontSize: 12, color: T.ink3 }}>Page {page} of {totalPages}</span>
-                <div style={{ display: "flex", gap: 4 }}>
+              <div className="flex items-center justify-between px-4 py-3 border-t border-jb-line">
+                <span className="text-xs text-jb-ink3">Page {page} of {totalPages}</span>
+                <div className="flex gap-1">
                   <Button isIconOnly size="sm" variant="flat" isDisabled={page === 1} onPress={() => setPage((p) => p - 1)}>
                     <IconChevronLeft size={16} />
                   </Button>
@@ -383,38 +391,34 @@ export default function JDBatchDetail() {
         )}
 
         {tab === "config" && (
-          <CardBody style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          <CardBody className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div>
-              <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: T.ink3, marginBottom: 10 }}>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-jb-ink3 mb-2.5">
                 Fields combined
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <div className="flex flex-wrap gap-1.5">
                 {batch.fields_config.map((f) => (
-                  <span key={f} style={{
-                    display: "inline-flex", alignItems: "center", gap: 5,
-                    padding: "6px 11px", borderRadius: 999,
-                    background: T.surface2, color: T.ink2, border: `1px solid ${T.line}`,
-                    fontSize: 12, fontFamily: "'JetBrains Mono',ui-monospace,monospace",
-                  }}>
+                  <span key={f} className="inline-flex items-center gap-[5px] px-[11px] py-1.5 rounded-full bg-jb-surface2 text-jb-ink2 border border-jb-line text-xs font-mono">
                     {f}
                   </span>
                 ))}
               </div>
-              <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: T.ink3, margin: "18px 0 6px" }}>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-jb-ink3 mt-[18px] mb-1.5">
                 Batch info
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: "8px 12px", fontSize: 13 }}>
+              <div className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-2 text-[13px]">
                 {([
                   ["ID", `#${batch.id}`],
                   ["File", batch.file_path.split("/").pop() ?? "—"],
+                  ["Workers", batch.workers],
                   ["Total", batch.total],
                   ["Done", batch.done_count],
                   ["Errors", batch.error_count],
                   ["Created", fmtDate(batch.created_at)],
                 ] as [string, string | number][]).map(([k, v]) => (
                   <>
-                    <div key={`k-${k}`} style={{ color: T.ink3, fontSize: 12 }}>{k}</div>
-                    <div key={`v-${k}`} style={{ color: T.ink, fontFamily: typeof v === "string" && v.startsWith("#") ? "'JetBrains Mono',monospace" : undefined }}>
+                    <div key={`k-${k}`} className="text-jb-ink3 text-xs">{k}</div>
+                    <div key={`v-${k}`} className={cn("text-jb-ink", typeof v === "string" && v.startsWith("#") ? "font-mono" : "")}>
                       {String(v)}
                     </div>
                   </>
@@ -422,16 +426,16 @@ export default function JDBatchDetail() {
               </div>
             </div>
             <div>
-              <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: T.ink3, marginBottom: 10 }}>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-jb-ink3 mb-2.5">
                 Status
               </div>
               <Badge status={batch.status as BadgeStatus} />
-              <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: T.ink3, margin: "18px 0 6px" }}>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-jb-ink3 mt-[18px] mb-1.5">
                 Progress
               </div>
-              <ProgressBar value={processed} total={batch.total} running={running} done={batch.status === "done"} />
-              <div style={{ fontSize: 12, color: T.ink3, marginTop: 6 }}>
-                {processed} / {batch.total} processed · {pct.toFixed(1)}%
+              <ProgressBar value={batch.done_count} errors={batch.error_count} total={batch.total} running={running} done={batch.status === "done"} />
+              <div className="text-xs text-jb-ink3 mt-1.5">
+                {batch.done_count} done · {batch.error_count > 0 ? `${batch.error_count} errors · ` : ""}{batch.total - processed} pending · {pct.toFixed(1)}%
               </div>
             </div>
           </CardBody>

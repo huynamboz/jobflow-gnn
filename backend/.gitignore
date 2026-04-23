@@ -12,3 +12,4 @@ checkpoints/
 *.jsonl
 .env
 auth/
+data/processed/

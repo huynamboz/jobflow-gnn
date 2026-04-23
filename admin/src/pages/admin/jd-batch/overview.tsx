@@ -3,55 +3,52 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@heroui/button";
 import { IconFileText, IconLoader2, IconPlus } from "@tabler/icons-react";
 
+import { cn } from "@/lib/utils";
 import { jobService } from "@/services/job.service";
 import type { JDBatch } from "@/types/job.types";
-import { T, POLL_INTERVAL, fmtDate, eta } from "./_tokens";
+import { POLL_INTERVAL, fmtDate } from "./_tokens";
 import { Badge, type BadgeStatus, KeyframeStyle, ProgressBar, StatCard } from "./_primitives";
 
 function BatchCard({ batch, onClick }: { batch: JDBatch; onClick: () => void }) {
   const processed = batch.done_count + batch.error_count;
-  const pct = batch.total > 0 ? (processed / batch.total) * 100 : 0;
+  const pct = batch.total > 0 ? (batch.done_count / batch.total) * 100 : 0;
 
   return (
     <div
-      className="jb-card-hover"
+      className="jb-card-hover bg-jb-surface border border-jb-line rounded-[20px] p-[18px] cursor-pointer transition-[transform,box-shadow] duration-150"
       onClick={onClick}
-      style={{
-        background: T.surface, border: `1px solid ${T.line}`,
-        borderRadius: 20, padding: 18, cursor: "pointer",
-        transition: "transform 0.14s, box-shadow 0.14s",
-      }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+      <div className="flex justify-between items-center mb-2.5">
         <Badge status={batch.status as BadgeStatus} />
-        <span style={{ fontFamily: "monospace", fontSize: 11, color: T.ink4 }}>{fmtDate(batch.created_at)}</span>
+        <span className="font-mono text-[11px] text-jb-ink4">{fmtDate(batch.created_at)}</span>
       </div>
-      <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em" }}>Batch #{batch.id}</div>
-      <div style={{ fontFamily: "monospace", fontSize: 12, color: T.ink3, marginTop: 2 }}>
+
+      <div className="font-bold text-[15px] tracking-[-0.01em]">Batch #{batch.id}</div>
+      <div className="font-mono text-[12px] text-jb-ink3 mt-0.5">
         {batch.file_path.split("/").pop()}
       </div>
 
-      <div style={{ marginTop: 14 }}>
+      <div className="mt-3.5">
         <ProgressBar
-          value={processed} total={batch.total}
+          value={batch.done_count} errors={batch.error_count} total={batch.total}
           running={batch.status === "running"} done={batch.status === "done"}
         />
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 8 }}>
-          <span style={{ color: T.ink3 }}>{batch.done_count} / {batch.total} records</span>
-          <span style={{ fontWeight: 600 }}>{pct.toFixed(0)}%</span>
+        <div className="flex justify-between text-xs mt-2">
+          <span className="text-jb-ink3">{batch.done_count} / {batch.total} records</span>
+          <span className="font-semibold">{pct.toFixed(0)}%</span>
         </div>
       </div>
 
-      <div style={{ height: 1, background: T.line, margin: "14px 0 12px" }} />
+      <div className="h-px bg-jb-line my-3.5" />
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 11.5 }}>
+      <div className="grid grid-cols-2 gap-2.5 text-[11.5px]">
         <div>
-          <div style={{ textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600, fontSize: 10, color: T.ink4 }}>Fields</div>
-          <div style={{ marginTop: 2, color: T.ink2 }}>{batch.fields_config.length} combined</div>
+          <div className="uppercase tracking-[0.05em] font-semibold text-[10px] text-jb-ink4">Fields</div>
+          <div className="mt-0.5 text-jb-ink2">{batch.fields_config.length} combined</div>
         </div>
         <div>
-          <div style={{ textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600, fontSize: 10, color: T.ink4 }}>Errors</div>
-          <div style={{ marginTop: 2, color: batch.error_count > 0 ? T.danger : T.ink2, fontWeight: 600 }}>
+          <div className="uppercase tracking-[0.05em] font-semibold text-[10px] text-jb-ink4">Errors</div>
+          <div className={cn("mt-0.5 font-semibold", batch.error_count > 0 ? "text-jb-danger" : "text-jb-ink2")}>
             {batch.error_count}
           </div>
         </div>
@@ -84,20 +81,20 @@ export default function JDBatchOverview() {
   const runningCount = batches.filter((b) => b.status === "running").length;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="flex flex-col gap-5">
       <KeyframeStyle />
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 16 }}>
+      <div className="flex flex-col sm:flex-row sm:items-end gap-3">
         <div>
-          <h1 style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.025em", margin: 0, color: T.ink }}>
-            JD Batch <span style={{ fontStyle: "italic", color: T.accent, fontWeight: 400 }}>Extraction</span>
+          <h1 className="text-[26px] sm:text-[32px] font-bold tracking-[-0.025em] m-0 text-jb-ink">
+            JD Batch <span className="italic text-jb-accent font-normal">Extraction</span>
           </h1>
-          <p style={{ margin: "4px 0 0", color: T.ink3, fontSize: 14 }}>
+          <p className="mt-1 text-jb-ink3 text-sm m-0">
             Normalize scraped job postings into structured JSON using an LLM.
           </p>
         </div>
-        <div style={{ marginLeft: "auto" }}>
+        <div className="sm:ml-auto">
           <Button color="primary" startContent={<IconPlus size={14} />} onPress={() => navigate("new")}>
             New batch
           </Button>
@@ -105,28 +102,28 @@ export default function JDBatchOverview() {
       </div>
 
       {/* Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
-        <StatCard label="Active now"         value={runningCount}            unit="running"  accent={runningCount > 0} />
-        <StatCard label="Total batches"      value={batches.length}          unit="all-time" />
-        <StatCard label="Records extracted"  value={totalDone.toLocaleString()} unit={`/ ${totalRecords.toLocaleString()}`} />
-        <StatCard label="Last batch"         value={batches[0] ? `#${batches[0].id}` : "—"} />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatCard label="Active now"        value={runningCount}               unit="running"  accent={runningCount > 0} />
+        <StatCard label="Total batches"     value={batches.length}             unit="all-time" />
+        <StatCard label="Records extracted" value={totalDone.toLocaleString()} unit={`/ ${totalRecords.toLocaleString()}`} />
+        <StatCard label="Last batch"        value={batches[0] ? `#${batches[0].id}` : "—"} />
       </div>
 
       {/* Batch grid */}
       {loading ? (
-        <div style={{ display: "grid", placeItems: "center", height: 160, color: T.ink3 }}>
-          <IconLoader2 size={20} style={{ animation: "jb-spin 0.7s linear infinite" }} />
+        <div className="grid place-items-center h-40 text-jb-ink3">
+          <IconLoader2 size={20} className="animate-[jb-spin_0.7s_linear_infinite]" />
         </div>
       ) : batches.length === 0 ? (
-        <div style={{ display: "grid", placeItems: "center", height: 240, color: T.ink3 }}>
-          <div style={{ textAlign: "center" }}>
-            <IconFileText size={32} style={{ margin: "0 auto 12px", color: T.ink4 }} />
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>No batches yet</div>
-            <div style={{ fontSize: 13 }}>Upload a JSONL file to start extraction.</div>
+        <div className="grid place-items-center h-60 text-jb-ink3">
+          <div className="text-center">
+            <IconFileText size={32} className="mx-auto mb-3 text-jb-ink4" />
+            <div className="font-semibold mb-1">No batches yet</div>
+            <div className="text-[13px]">Upload a JSONL file to start extraction.</div>
           </div>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 14 }}>
+        <div className="grid gap-3.5" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))" }}>
           {batches.map((b) => (
             <BatchCard key={b.id} batch={b} onClick={() => navigate(String(b.id))} />
           ))}

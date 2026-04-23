@@ -93,6 +93,11 @@ class Job(models.Model):
     salary_max = models.IntegerField(default=0)
     salary_currency = models.CharField(max_length=10, default="USD")
 
+    # Extracted / enriched fields
+    role_category = models.CharField(max_length=20, blank=True, default="other")
+    experience_min = models.FloatField(null=True, blank=True)
+    experience_max = models.FloatField(null=True, blank=True)
+
     # Source
     source_url = models.URLField(max_length=1000, blank=True, default="")
     fingerprint = models.CharField(max_length=32, db_index=True, blank=True, default="")
@@ -151,6 +156,7 @@ class JDExtractionBatch(models.Model):
     total = models.IntegerField(default=0)
     done_count = models.IntegerField(default=0)
     error_count = models.IntegerField(default=0)
+    workers = models.PositiveSmallIntegerField(default=3)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -177,6 +183,7 @@ class JDExtractionRecord(models.Model):
     batch = models.ForeignKey(JDExtractionBatch, on_delete=models.CASCADE, related_name="records")
     index = models.IntegerField()
     raw_data = models.JSONField(default=dict)
+    source_url = models.URLField(max_length=1000, blank=True, default="")
     combined_text = models.TextField(blank=True, default="")
     content_hash = models.CharField(max_length=32, db_index=True, blank=True, default="")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)

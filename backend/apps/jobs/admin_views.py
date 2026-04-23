@@ -1,6 +1,9 @@
 """Admin-only job management endpoints (/api/admin/...)."""
 
-from django.db.models import Count
+import json
+
+from django.db.models import Count, F
+from django.http import HttpResponse
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.response import Response
@@ -112,6 +115,7 @@ def _batch_to_dict(batch) -> dict:
         "total": batch.total,
         "done_count": batch.done_count,
         "error_count": batch.error_count,
+        "workers": batch.workers,
         "created_at": batch.created_at.isoformat(),
     }
 
@@ -124,6 +128,7 @@ def _record_to_dict(record, include_result: bool = False) -> dict:
         "error_msg": record.error_msg,
         "title": (record.raw_data or {}).get("title", ""),
         "company": (record.raw_data or {}).get("company", ""),
+        "source_url": record.source_url,
     }
     if include_result:
         d["result"] = record.result
@@ -212,6 +217,9 @@ class JDBatchListView(APIView):
         limit_raw = request.data.get("limit")
         limit = int(limit_raw) if limit_raw not in (None, "", "null") else None
 
+        workers_raw = request.data.get("workers")
+        workers = max(1, min(20, int(workers_raw))) if workers_raw not in (None, "", "null") else 3
+
         if not upload:
             return Response({"success": False, "error": {"code": "INVALID_INPUT", "message": "file is required.", "status": 400}}, status=400)
         if not fields_config:
@@ -220,6 +228,7 @@ class JDBatchListView(APIView):
         batch = JDExtractionBatch.objects.create(
             file_path=upload.name,
             fields_config=fields_config,
+            workers=workers,
         )
 
         records_to_create = []
@@ -232,6 +241,7 @@ class JDBatchListView(APIView):
                     batch=batch,
                     index=idx,
                     raw_data=obj,
+                    source_url=obj.get("source_url") or "",
                     combined_text=combined,
                     content_hash=content_hash(combined),
                 ))
@@ -243,7 +253,7 @@ class JDBatchListView(APIView):
         batch.total = len(records_to_create)
         batch.save(update_fields=["total"])
 
-        start_batch(batch.id)
+        start_batch(batch.id, workers=workers)
 
         return Response({"success": True, "data": _batch_to_dict(batch)}, status=status.HTTP_201_CREATED)
 
@@ -289,7 +299,7 @@ class JDBatchCancelView(APIView):
 
     @extend_schema(tags=["Admin"])
     def post(self, request, pk):
-        from apps.jobs.models import JDExtractionBatch
+        from apps.jobs.models import JDExtractionBatch, JDExtractionRecord
         from apps.jobs.services.jd_batch_processor import cancel_batch
 
         try:
@@ -301,7 +311,53 @@ class JDBatchCancelView(APIView):
             return Response({"success": False, "error": {"code": "INVALID_STATE", "message": "Batch is not running.", "status": 400}}, status=400)
 
         cancel_batch(batch.id)
+        # Force-cancel via DB — handles case where thread died (e.g. server restart)
+        JDExtractionBatch.objects.filter(id=pk).update(status=JDExtractionBatch.STATUS_CANCELLED)
+        JDExtractionRecord.objects.filter(batch_id=pk, status=JDExtractionRecord.STATUS_PROCESSING).update(
+            status=JDExtractionRecord.STATUS_PENDING
+        )
         return Response({"success": True})
+
+
+class JDBatchResumeView(APIView):
+    permission_classes = [IsAdmin]
+
+    @extend_schema(tags=["Admin"])
+    def post(self, request, pk):
+        from apps.jobs.models import JDExtractionBatch
+        from apps.jobs.services.jd_batch_processor import start_batch
+
+        try:
+            batch = JDExtractionBatch.objects.get(pk=pk)
+        except JDExtractionBatch.DoesNotExist:
+            return Response({"success": False, "error": {"code": "NOT_FOUND", "message": "Batch not found.", "status": 404}}, status=404)
+
+        if batch.status == JDExtractionBatch.STATUS_RUNNING:
+            return Response({"success": False, "error": {"code": "INVALID_STATE", "message": "Batch is already running.", "status": 400}}, status=400)
+
+        # Reset error and stuck-processing records to pending so they get retried
+        from apps.jobs.models import JDExtractionRecord
+        error_reset = JDExtractionRecord.objects.filter(
+            batch_id=pk, status=JDExtractionRecord.STATUS_ERROR,
+        ).update(status=JDExtractionRecord.STATUS_PENDING, error_msg="")
+        JDExtractionRecord.objects.filter(
+            batch_id=pk, status=JDExtractionRecord.STATUS_PROCESSING,
+        ).update(status=JDExtractionRecord.STATUS_PENDING)
+        # Deduct from batch error_count so progress bar starts correctly
+        if error_reset:
+            JDExtractionBatch.objects.filter(id=pk).update(error_count=F("error_count") - error_reset)
+
+        pending = JDExtractionRecord.objects.filter(batch_id=pk, status=JDExtractionRecord.STATUS_PENDING).count()
+        if pending == 0:
+            return Response({"success": False, "error": {"code": "NO_PENDING", "message": "No pending or failed records to process.", "status": 400}}, status=400)
+
+        workers_raw = request.data.get("workers")
+        workers = max(1, min(20, int(workers_raw))) if workers_raw not in (None, "", "null") else batch.workers
+        if workers != batch.workers:
+            JDExtractionBatch.objects.filter(id=pk).update(workers=workers)
+
+        start_batch(batch.id, workers=workers)
+        return Response({"success": True, "pending": pending})
 
 
 class JDBatchRecordDetailView(APIView):
@@ -456,3 +512,79 @@ class AdminJobDetailView(APIView):
         job.is_active = False
         job.save()
         return Response({"success": True, "message": "Job deactivated."})
+
+
+class JDExportView(APIView):
+    """GET /api/admin/jd/export/ — Download latest JD extraction results as JSON."""
+    permission_classes = [IsAdmin]
+
+    @extend_schema(tags=["Admin"])
+    def get(self, request):
+        from apps.jobs.models import Job, JobSkill, JDExtractionRecord
+
+        role_filter = request.query_params.get("role_category", "")
+
+        # Build url → Job.id mapping
+        url_to_job: dict[str, int] = {}
+        for j in Job.objects.filter(is_active=True).only("id", "source_url"):
+            if j.source_url:
+                url_to_job[j.source_url] = j.id
+
+        # Fetch all done JDExtractionRecords, deduplicate by source_url (keep latest)
+        seen_urls: set[str] = set()
+        seen_no_url: set[int] = set()
+        records = []
+        for rec in (
+            JDExtractionRecord.objects
+            .filter(status=JDExtractionRecord.STATUS_DONE)
+            .exclude(result=None)
+            .order_by("-id")  # latest first for dedup
+            .only("id", "source_url", "result")
+        ):
+            result = rec.result or {}
+            role = result.get("role_category") or "other"
+
+            if role_filter and role != role_filter:
+                continue
+
+            # Dedup by source_url (or record id if no url)
+            if rec.source_url:
+                if rec.source_url in seen_urls:
+                    continue
+                seen_urls.add(rec.source_url)
+            else:
+                if rec.id in seen_no_url:
+                    continue
+                seen_no_url.add(rec.id)
+
+            job_id = url_to_job.get(rec.source_url) if rec.source_url else None
+            records.append((job_id, result))
+
+        # Fetch job titles for matched jobs
+        matched_ids = [jid for jid, _ in records if jid is not None]
+        title_map: dict[int, str] = dict(
+            Job.objects.filter(id__in=matched_ids).values_list("id", "title")
+        )
+
+        output = []
+        for job_id, result in records:
+            output.append({
+                "job_id":              job_id,
+                "title":               title_map.get(job_id, result.get("title", "")),
+                "role_category":       result.get("role_category") or "other",
+                "seniority":           result.get("seniority", 2),
+                "is_remote":           bool(result.get("is_remote", False)),
+                "experience_min":      result.get("experience_min", 0) or 0,
+                "experience_max":      result.get("experience_max"),
+                "degree_requirement":  result.get("degree_requirement", 0) or 0,
+                "salary_usd_annual_min": result.get("salary_usd_annual_min", 0) or 0,
+                "salary_usd_annual_max": result.get("salary_usd_annual_max", 0) or 0,
+                "skills":              result.get("skills") or [],
+            })
+
+        payload = json.dumps(output, ensure_ascii=False, indent=2)
+        return HttpResponse(
+            payload,
+            content_type="application/json; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="jds_extracted.json"'},
+        )

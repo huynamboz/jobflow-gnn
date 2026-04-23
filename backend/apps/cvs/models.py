@@ -71,3 +71,61 @@ class CVSkill(models.Model):
     class Meta:
         db_table = "cv_skills"
         unique_together = ("cv", "skill")
+
+
+class CVExtractionBatch(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_RUNNING = "running"
+    STATUS_DONE = "done"
+    STATUS_ERROR = "error"
+    STATUS_CANCELLED = "cancelled"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_RUNNING, "Running"),
+        (STATUS_DONE, "Done"),
+        (STATUS_ERROR, "Error"),
+        (STATUS_CANCELLED, "Cancelled"),
+    ]
+
+    # Filter used to select CVs for this batch
+    filter_source = models.CharField(max_length=50, blank=True, default="")
+    filter_source_categories = models.JSONField(default=list, blank=True)  # e.g. ["AI", "Devops"]
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    total = models.IntegerField(default=0)
+    done_count = models.IntegerField(default=0)
+    error_count = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "cv_extraction_batches"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"CVBatch #{self.id} ({self.status})"
+
+
+class CVExtractionRecord(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_PROCESSING = "processing"
+    STATUS_DONE = "done"
+    STATUS_ERROR = "error"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_PROCESSING, "Processing"),
+        (STATUS_DONE, "Done"),
+        (STATUS_ERROR, "Error"),
+    ]
+
+    batch = models.ForeignKey(CVExtractionBatch, on_delete=models.CASCADE, related_name="records")
+    cv = models.ForeignKey(CV, on_delete=models.CASCADE, related_name="extraction_records")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    result = models.JSONField(null=True, blank=True)
+    error_msg = models.CharField(max_length=500, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "cv_extraction_records"
+        ordering = ["cv_id"]

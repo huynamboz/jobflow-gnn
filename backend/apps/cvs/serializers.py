@@ -17,7 +17,7 @@ class CVListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CV
-        fields = ("id", "file_name", "seniority", "experience_years", "education", "source", "skill_count", "is_active", "created_at")
+        fields = ("id", "file_name", "seniority", "experience_years", "education", "role_category", "source", "skill_count", "is_active", "created_at")
 
 
 class CVDetailSerializer(serializers.ModelSerializer):
@@ -27,6 +27,6 @@ class CVDetailSerializer(serializers.ModelSerializer):
         model = CV
         fields = (
             "id", "file_name", "candidate_name", "seniority", "experience_years", "education",
-            "work_experience", "parsed_text", "source", "source_category", "skills",
+            "role_category", "work_experience", "parsed_text", "source", "source_category", "skills",
             "is_active", "created_at", "updated_at",
         )

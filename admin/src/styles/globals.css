@@ -3,9 +3,57 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@theme {
+  --color-jb-accent:       oklch(0.55 0.20 240);
+  --color-jb-accent600:    oklch(0.48 0.20 240);
+  --color-jb-accent50:     oklch(0.97 0.03 240);
+  --color-jb-accent100:    oklch(0.92 0.07 240);
+  --color-jb-success:      oklch(0.62 0.17 155);
+  --color-jb-success50:    oklch(0.96 0.04 155);
+  --color-jb-danger:       oklch(0.60 0.22 25);
+  --color-jb-danger50:     oklch(0.96 0.03 25);
+  --color-jb-warning:      oklch(0.76 0.16 70);
+  --color-jb-warning50:    oklch(0.97 0.04 75);
+  --color-jb-ink:          oklch(0.18 0.02 265);
+  --color-jb-ink2:         oklch(0.38 0.015 265);
+  --color-jb-ink3:         oklch(0.56 0.012 265);
+  --color-jb-ink4:         oklch(0.72 0.008 265);
+  --color-jb-surface:      #ffffff;
+  --color-jb-surface2:     oklch(0.97 0.005 85);
+  --color-jb-surface3:     oklch(0.945 0.006 85);
+  --color-jb-line:         oklch(0.92 0.006 85);
+  --color-jb-linestrong:   oklch(0.86 0.008 85);
+  /* Badge / status colors */
+  --color-jb-run-bg:       oklch(0.93 0.05 240);
+  --color-jb-run-text:     oklch(0.42 0.16 240);
+  --color-jb-cancel-bg:    oklch(0.94 0.03 60);
+  --color-jb-cancel-text:  oklch(0.52 0.12 60);
+  /* Dark terminal / code block */
+  --color-jb-dark:         oklch(0.2 0.02 265);
+  --color-jb-dark-text:    oklch(0.9 0.01 85);
+  --color-jb-dark-text2:   oklch(0.94 0.008 85);
+  --color-jb-code-dim:     oklch(0.55 0.02 265);
+  --color-jb-code-blue:    oklch(0.72 0.15 235);
+  --color-jb-code-green:   oklch(0.75 0.17 150);
+  --color-jb-code-red:     oklch(0.72 0.18 25);
+}
+
+@keyframes jb-shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+@keyframes jb-pulse   { 0%,100%{opacity:1} 50%{opacity:0.5} }
+@keyframes jb-slide   { from{transform:translateX(32px);opacity:0} to{transform:translateX(0);opacity:1} }
+@keyframes jb-fade    { from{opacity:0} to{opacity:1} }
+@keyframes jb-spin    { to{transform:rotate(360deg)} }
+
 @layer components {
   button {
     @apply cursor-pointer;
+  }
+  .jb-row:hover td {
+    background: var(--color-jb-surface2) !important;
+  }
+  .jb-card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 2px 4px rgba(20,18,30,.04), 0 8px 24px rgba(20,18,30,.06);
   }
 }
 

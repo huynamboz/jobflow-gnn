@@ -76,7 +76,19 @@ You are a job description parser. Extract structured information from the given 
 - 4 = Master's degree / MBA
 - 5 = PhD / Doctorate
 
-**skills**: Technical skills only. The `name` field MUST be one of the canonical identifiers below — map what you read to the closest match. Omit a skill if nothing in the list fits. Importance 1–5: required=5, preferred=3, nice-to-have=1.
+**skills**: Technical skills only. The `name` field MUST be one of the canonical identifiers below — map what you read to the closest match. Omit a skill if nothing in the list fits.
+
+Importance scale (assign carefully — do NOT cluster everything at the same value):
+- 5 = Explicitly required / must-have (stated as hard requirement in JD)
+- 4 = Strongly preferred (listed under requirements but with softer language)
+- 3 = Nice to have / mentioned once without emphasis
+- 2 = Minor mention / implied by context
+- 1 = Rarely needed / tangentially related to this role
+
+Rules:
+- At most 30% of skills may have importance=5
+- Spread across at least 3 different importance levels when listing 5+ skills
+- Do NOT give importance=5 to every skill — differentiate what is truly required vs preferred
 
 Canonical skill identifiers (use these exact strings):
 python, javascript, typescript, java, kotlin, go, rust, cpp, c, csharp, php, ruby, swift, scala, r, perl, elixir, groovy, julia, solidity,

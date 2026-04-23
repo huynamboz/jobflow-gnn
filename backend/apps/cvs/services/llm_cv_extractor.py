@@ -72,7 +72,7 @@ def extract(raw_text: str) -> CVExtractResult:
         )
     except Exception as exc:
         logger.warning("LLM call failed during CV extraction: %s", exc)
-        return CVExtractResult()
+        raise
 
     cleaned = _strip_code_fence(response)
     try:

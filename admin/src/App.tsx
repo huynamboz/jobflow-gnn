@@ -18,6 +18,12 @@ import JDBatchLayout from "@/pages/admin/jd-batch";
 import JDBatchOverview from "@/pages/admin/jd-batch/overview";
 import JDBatchNew from "@/pages/admin/jd-batch/new";
 import JDBatchDetail from "@/pages/admin/jd-batch/detail";
+import CVBatchLayout from "@/pages/admin/cv-batch";
+import CVBatchOverview from "@/pages/admin/cv-batch/overview";
+import CVBatchDetail from "@/pages/admin/cv-batch/detail";
+import LabelBatchLayout from "@/pages/admin/label-batch";
+import LabelBatchOverview from "@/pages/admin/label-batch/overview";
+import LabelBatchDetail from "@/pages/admin/label-batch/detail";
 
 function App() {
   return (
@@ -37,6 +43,14 @@ function App() {
           <Route index element={<JDBatchOverview />} />
           <Route path="new" element={<JDBatchNew />} />
           <Route path=":id" element={<JDBatchDetail />} />
+        </Route>
+        <Route path="cv-batch" element={<CVBatchLayout />}>
+          <Route index element={<CVBatchOverview />} />
+          <Route path=":id" element={<CVBatchDetail />} />
+        </Route>
+        <Route path="label-batch" element={<LabelBatchLayout />}>
+          <Route index element={<LabelBatchOverview />} />
+          <Route path=":id" element={<LabelBatchDetail />} />
         </Route>
       </Route>
 

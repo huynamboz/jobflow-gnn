@@ -71,12 +71,16 @@ export interface JDExtractResult {
   title: string;
   company: string;
   location: string;
+  is_remote: boolean;
+  role_category: string;
   seniority: number;
   job_type: string;
   salary_min: number;
   salary_max: number;
   salary_currency: string;
   salary_type: string;
+  salary_usd_annual_min: number;
+  salary_usd_annual_max: number;
   experience_min: number;
   experience_max: number | null;
   degree_requirement: number;
@@ -94,6 +98,7 @@ export interface JDBatch {
   total: number;
   done_count: number;
   error_count: number;
+  workers: number;
   created_at: string;
 }
 

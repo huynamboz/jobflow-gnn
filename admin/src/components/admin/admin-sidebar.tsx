@@ -1,23 +1,9 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { useState } from "react";
-import {
-  IconBrain,
-  IconBriefcase,
-  IconChevronDown,
-  IconClipboardList,
-  IconFiles,
-  IconFileStack,
-  IconLayoutDashboard,
-  IconLogout,
-  IconRobot,
-  IconScan,
-  IconSettings,
-  IconSparkles,
-  IconTags,
-  IconX,
-} from "@tabler/icons-react";
+import { IconChevronDown, IconLogout, IconSettings, IconX } from "@tabler/icons-react";
 
 import { useAuthStore } from "@/stores/auth.store";
+import { adminConfig } from "@/config/admin";
 
 const SIDEBAR_WIDTH = 272;
 
@@ -36,41 +22,6 @@ const T = {
   accent50:  "oklch(0.97 0.03 240)",
 };
 
-type NavItem = { label: string; href: string; icon: React.ElementType; count?: number };
-type NavSection = { title: string; items: NavItem[] };
-
-const NAV_SECTIONS: NavSection[] = [
-  {
-    title: "General",
-    items: [
-      { label: "Dashboard", href: "/admin", icon: IconLayoutDashboard },
-      { label: "Labeling",  href: "/admin/labeling", icon: IconTags },
-      { label: "Models",    href: "/admin/models",   icon: IconBrain },
-    ],
-  },
-  {
-    title: "Data",
-    items: [
-      { label: "Jobs", href: "/admin/jobs", icon: IconBriefcase },
-      { label: "CVs",  href: "/admin/cvs",  icon: IconFiles },
-    ],
-  },
-  {
-    title: "AI",
-    items: [
-      { label: "Recommend",      href: "/admin/recommend",     icon: IconSparkles },
-      { label: "LLM Providers",  href: "/admin/llm-providers", icon: IconRobot },
-      { label: "LLM Logs",       href: "/admin/llm-logs",      icon: IconClipboardList },
-    ],
-  },
-  {
-    title: "Extraction",
-    items: [
-      { label: "JD Extract", href: "/admin/jd-extract", icon: IconScan },
-      { label: "JD Batch",   href: "/admin/jd-batch",   icon: IconFileStack },
-    ],
-  },
-];
 
 export interface AdminSidebarProps {
   isOpen?: boolean;
@@ -155,7 +106,7 @@ export function AdminSidebar({ isOpen = true, onClose }: AdminSidebarProps) {
 
         {/* Nav */}
         <div style={{ flex: 1, overflow: "auto", marginRight: -6, paddingRight: 6, display: "flex", flexDirection: "column", gap: 10 }}>
-          {NAV_SECTIONS.map((section) => {
+          {adminConfig.navSections.map((section) => {
             const open = !collapsed[section.title];
             return (
               <div key={section.title} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -173,7 +124,7 @@ export function AdminSidebar({ isOpen = true, onClose }: AdminSidebarProps) {
                 >
                   {section.title}
                   <IconChevronDown
-                    size={10}
+                    size={20}
                     style={{
                       marginLeft: "auto",
                       transform: open ? "rotate(0deg)" : "rotate(-90deg)",
@@ -218,17 +169,6 @@ export function AdminSidebar({ isOpen = true, onClose }: AdminSidebarProps) {
                         style={{ color: active ? T.ink2 : T.ink4, flexShrink: 0 }}
                       />
                       <span>{item.label}</span>
-                      {item.count != null && (
-                        <span style={{
-                          marginLeft: "auto",
-                          fontSize: 11, fontWeight: 600,
-                          background: T.surface2,
-                          color: T.ink3,
-                          padding: "2px 7px", borderRadius: 999,
-                        }}>
-                          {item.count.toLocaleString()}
-                        </span>
-                      )}
                     </NavLink>
                   );
                 })}

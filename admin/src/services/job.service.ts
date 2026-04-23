@@ -51,11 +51,12 @@ class JobService {
     return res.data.data;
   }
 
-  async createBatch(file: File, fieldsConfig: string[], limit: number | null): Promise<JDBatch> {
+  async createBatch(file: File, fieldsConfig: string[], limit: number | null, workers = 3): Promise<JDBatch> {
     const form = new FormData();
     form.append("file", file);
     form.append("fields_config", JSON.stringify(fieldsConfig));
     if (limit != null) form.append("limit", String(limit));
+    form.append("workers", String(workers));
     const res = await apiClient.post<ApiSuccess<JDBatch>>("/admin/jd/batches/", form, {
       headers: { "Content-Type": "multipart/form-data" },
     });
@@ -73,10 +74,30 @@ class JobService {
     await apiClient.post(`/admin/jd/batches/${id}/cancel/`);
   }
 
+  async resumeBatch(id: number, workers?: number): Promise<void> {
+    await apiClient.post(`/admin/jd/batches/${id}/resume/`, workers != null ? { workers } : {});
+  }
+
   async getBatchRecord(batchId: number, recordId: number): Promise<import("@/types/job.types").JDBatchRecord> {
     const res = await apiClient.get<ApiSuccess<import("@/types/job.types").JDBatchRecord>>(`/admin/jd/batches/${batchId}/records/${recordId}/`);
     return res.data.data;
   }
+
+  async exportJDs(filters: { role_category?: string } = {}): Promise<void> {
+    const params = new URLSearchParams();
+    if (filters.role_category) params.set("role_category", filters.role_category);
+    const res = await apiClient.get(`/admin/jd/export/?${params}`, { responseType: "blob" });
+    _downloadBlob(res.data as Blob, "jds_extracted.json");
+  }
+}
+
+function _downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export const jobService = new JobService();
